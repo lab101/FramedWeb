@@ -1,0 +1,23 @@
+{
+  "name": "framed-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Framed - collaborative animation drawing app, WebGPU port.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "relay": "node server/relay.mjs",
+    "serve": "node server/server.mjs",
+    "start": "npm run build && node server/server.mjs"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.40",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0"
+  },
+  "dependencies": {
+    "ws": "^8.17.0"
+  }
+}

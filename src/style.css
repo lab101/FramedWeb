@@ -1,0 +1,410 @@
+:root {
+  --bg: #3b3b52;
+  --panel: #1f1f29;
+  --panel-2: #272733;
+  --border: #34343f;
+  --text: #e7e7ee;
+  --muted: #9a9aae;
+  --accent: #ff2f6e;
+  --accent-2: #2f9bff;
+  --ok: #36c98b;
+  --picker-size: 150px;
+  --sidebar-pad: 10px;
+  --panel-pad: 10px;
+  --sidebar-width: calc(var(--picker-size) + var(--panel-pad) * 2 + var(--sidebar-pad) * 2);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#app {
+  position: relative;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ---------------- Sidebar ---------------- */
+#sidebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 10;
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  background: transparent;
+  border-right: 1px solid rgba(52, 52, 63, 0.45);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: var(--sidebar-pad);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+#sidebar > * {
+  pointer-events: auto;
+}
+
+#sidebar > .panel {
+  flex-shrink: 0;
+}
+
+#sidebar > .panel--loop-preview {
+  flex-shrink: 0;
+}
+
+.panel {
+  background: rgba(39, 39, 51, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(52, 52, 63, 0.65);
+  border-radius: 6px;
+  padding: var(--panel-pad);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.panel-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.panel-title--sm {
+  font-size: 8.8px;
+}
+
+/* color picker */
+#color-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+#hsb-square {
+  cursor: crosshair;
+  display: block;
+  touch-action: none;
+  width: var(--picker-size);
+  height: var(--picker-size);
+  border-radius: 6px;
+}
+#swatches {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  width: var(--picker-size);
+  margin: 0 auto;
+}
+.swatch {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+/* tools */
+#tools {
+  display: flex;
+  gap: 6px;
+}
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+button:hover {
+  background: #30303d;
+}
+.tool {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.14);
+}
+button.tool:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+.tool img {
+  width: 20px;
+  height: 20px;
+  display: block;
+  object-fit: contain;
+}
+.tool.active {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.28);
+  color: #fff;
+}
+button.danger {
+  border-color: #5a2330;
+  color: #ff9bb3;
+}
+button.danger:hover {
+  background: #3a1a22;
+}
+
+.panel--loop-preview {
+  padding: 0;
+  overflow: hidden;
+  flex-shrink: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+#loop-preview-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+#sidebar > .panel--loop-preview {
+  pointer-events: auto;
+}
+.panel--loop-preview.hidden {
+  display: none;
+}
+
+.panel--frames {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+.panel--frames::-webkit-scrollbar {
+  display: none;
+}
+#frame-strip-spacer {
+  display: block;
+  width: 100%;
+  pointer-events: none;
+}
+#sidebar > .panel--frames {
+  pointer-events: auto;
+}
+.panel--frames.hidden {
+  display: none;
+}
+
+/* rows / inputs */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+.row span {
+  font-size: 12px;
+  color: var(--muted);
+}
+#clear-btn {
+  font-size: 12px;
+}
+
+input[type="number"],
+input[type="text"] {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 8px;
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+}
+input[type="number"] {
+  width: 52px;
+}
+input[type="range"] {
+  width: 100%;
+  accent-color: #fff;
+}
+
+#ws-connect {
+  flex-shrink: 0;
+  font-size: 12px;
+  padding: 6px;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.status {
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  text-align: center;
+}
+.status.offline {
+  background: #2a2a36;
+  color: var(--muted);
+}
+.status.connecting {
+  background: #3a3320;
+  color: #e8cf7a;
+}
+.status.online {
+  background: #18382c;
+  color: var(--ok);
+}
+.status.error {
+  background: #3a1c22;
+  color: #ff9bb3;
+}
+
+/* ---------------- Settings ---------------- */
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  min-width: 40px;
+  min-height: 40px;
+}
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.settings-btn {
+  position: absolute;
+  right: var(--sidebar-pad);
+  bottom: var(--sidebar-pad);
+  z-index: 20;
+  background: rgba(39, 39, 51, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(52, 52, 63, 0.65);
+}
+.settings-btn[aria-expanded="true"] {
+  border-color: #fff;
+  background: #3a3a48;
+  color: #fff;
+}
+
+.settings-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none;
+}
+.settings-overlay.hidden {
+  display: none;
+}
+.settings-overlay:not(.hidden) {
+  pointer-events: auto;
+}
+.settings-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 10, 14, 0.45);
+}
+.settings-panel {
+  position: absolute;
+  right: var(--sidebar-pad);
+  bottom: calc(var(--sidebar-pad) + 48px);
+  width: var(--sidebar-width);
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+/* ---------------- Stage ---------------- */
+#stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+#gpu-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+#frame-label-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+#stage.panning #gpu-canvas {
+  cursor: grab;
+}
+
+/* projector mode: hide UI chrome, show only the looping animation */
+body.projector #sidebar,
+body.projector #settings-btn,
+body.projector #settings-overlay,
+body.projector #frame-label-canvas,
+body.projector #loop-preview {
+  display: none;
+}
+body.projector #gpu-canvas {
+  cursor: pointer;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 14, 0.92);
+  text-align: center;
+  padding: 32px;
+}
+.overlay.hidden {
+  display: none;
+}
+.overlay h2 {
+  margin-top: 0;
+}
+.overlay code {
+  background: #2a2a36;
+  padding: 1px 5px;
+  border-radius: 6px;
+}

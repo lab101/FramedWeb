@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Framed — WebGPU</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="sidebar">
+        <section class="panel panel--loop-preview" id="loop-preview" hidden>
+          <canvas id="loop-preview-canvas"></canvas>
+        </section>
+
+        <section class="panel">
+          <div id="color-picker">
+            <canvas id="hsb-square" width="150" height="150"></canvas>
+          </div>
+          <div id="swatches"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title panel-title--sm">Thickness</div>
+          <input id="stroke-slider" type="range" min="0" max="1" step="0.01" value="0.5" />
+        </section>
+
+        <section class="panel">
+          <div id="tools">
+            <button class="tool active" data-tool="brush" title="Brush (B)" aria-label="Brush">
+              <img src="/ui/brush.png" alt="" width="24" height="24" />
+            </button>
+            <button class="tool" data-tool="rectangle" title="Rectangle (R)" aria-label="Rectangle">
+              <img src="/ui/rect.png" alt="" width="24" height="24" />
+            </button>
+            <button class="tool" data-tool="circle" title="Circle (C)" aria-label="Circle">
+              <img src="/ui/circle.png" alt="" width="24" height="24" />
+            </button>
+          </div>
+          <button id="clear-btn" class="danger" title="Clear all frames (X)">Clear all</button>
+        </section>
+
+        <section class="panel--frames" id="frame-strip" hidden>
+          <div id="frame-strip-spacer" aria-hidden="true"></div>
+        </section>
+      </aside>
+
+      <button
+        id="settings-btn"
+        class="icon-btn settings-btn"
+        type="button"
+        title="Settings"
+        aria-label="Settings"
+        aria-expanded="false"
+        aria-controls="settings-overlay"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 5 15.4a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 8a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+
+      <div id="settings-overlay" class="settings-overlay hidden" aria-hidden="true">
+        <div class="settings-backdrop"></div>
+        <div class="settings-panel">
+          <section class="panel">
+            <div class="panel-title">Animation</div>
+            <label class="row">
+              <span>Frames</span>
+              <input id="frames-input" type="number" min="1" max="60" value="6" />
+            </label>
+            <label class="row">
+              <span>Speed</span>
+              <input id="speed-slider" type="range" min="0" max="80" step="1" value="8" />
+            </label>
+            <div class="hint">← → to switch frame · onion skin shows previous frame</div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">Connection</div>
+            <div class="row">
+              <input id="ws-url" type="text" placeholder="ws://localhost:8080/ws" />
+              <button id="ws-connect">Connect</button>
+            </div>
+            <div id="ws-status" class="status offline">offline (single user)</div>
+          </section>
+        </div>
+      </div>
+
+      <main id="stage">
+        <canvas id="gpu-canvas"></canvas>
+        <canvas id="frame-label-canvas" aria-hidden="true"></canvas>
+        <div id="no-webgpu" class="overlay hidden">
+          <div>
+            <h2>WebGPU not available</h2>
+            <p>
+              This app needs a browser with WebGPU enabled (recent Chrome, Edge,
+              or Safari Technology Preview) over <code>https</code> or
+              <code>localhost</code>.
+            </p>
+          </div>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
