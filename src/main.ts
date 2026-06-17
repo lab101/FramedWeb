@@ -18,6 +18,8 @@ const FRAME_H = 1080;
 const DEFAULT_FRAMES = 6;
 const MIN_BRUSH_SIZE = 24;
 const MAX_BRUSH_SIZE = 140;
+const WHEEL_ZOOM_BASE = 1.00025; // exponential wheel zoom; lower = slower
+const KEYBOARD_ZOOM_STEP = 1.02;
 
 const renderer = new Renderer();
 const frames = new FrameManager(renderer);
@@ -30,6 +32,7 @@ let colorPicker: ColorPicker;
 let tool: Tool = "brush";
 let currentColor: RGB = { r: 1, g: 0.2, b: 0.45 };
 let strokeScale = 0.5; // 0..1 -> brush size range
+let strokeSliderActive = false;
 
 let drawing = false;
 let panning = false;
@@ -80,6 +83,7 @@ async function boot(): Promise<void> {
   wireKeyboard();
   wireControls();
   wireSettings();
+  wireSidebarToggle();
   wireNetwork();
 
   // Observe the app shell so the canvas fills the viewport behind the sidebar.
@@ -103,7 +107,6 @@ function resize(): void {
 function syncFrameStripVisibility(): void {
   const show = frames.count() > 1 && !projector;
   (document.getElementById("frame-strip") as HTMLElement).classList.toggle("hidden", !show);
-  (document.getElementById("loop-preview") as HTMLElement).classList.toggle("hidden", !show);
 }
 
 function elementScreenRect(el: HTMLElement): ScreenRect | null {
@@ -376,7 +379,7 @@ function wirePointer(): void {
     (e) => {
       e.preventDefault();
       const [dx, dy] = deviceCoords(e);
-      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      const factor = Math.pow(WHEEL_ZOOM_BASE, -e.deltaY);
       view.zoomAt(dx, dy, factor, canvas.width, canvas.height, frames.width, frames.height);
     },
     { passive: false },
@@ -422,6 +425,7 @@ function wireFrameStrip(): void {
 // --- keyboard -------------------------------------------------------------
 function wireKeyboard(): void {
   window.addEventListener("keydown", (e) => {
+    if (strokeSliderActive) return;
     const tag = (document.activeElement?.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea") return;
 
@@ -451,10 +455,10 @@ function wireKeyboard(): void {
         break;
       // zoom in / out (held repeats)
       case "v":
-        zoomBy(1.06);
+        zoomBy(KEYBOARD_ZOOM_STEP);
         break;
       case "n":
-        zoomBy(1 / 1.06);
+        zoomBy(1 / KEYBOARD_ZOOM_STEP);
         break;
       // frame speed (matches original: '[' faster, ']' slower)
       case "[":
@@ -484,6 +488,7 @@ function wireKeyboard(): void {
     }
   });
   window.addEventListener("keyup", (e) => {
+    if (strokeSliderActive) return;
     if (e.key === " ") {
       spaceDown = false;
       if (!panning) stage.classList.remove("panning");
@@ -551,11 +556,82 @@ function wireSettings(): void {
   backdrop.addEventListener("click", closeSettings);
 }
 
+function setSidebarOpen(open: boolean): void {
+  const sidebar = document.getElementById("sidebar") as HTMLElement;
+  const btn = document.getElementById("sidebar-toggle") as HTMLButtonElement;
+  sidebar.classList.toggle("collapsed", !open);
+  btn.setAttribute("aria-expanded", String(open));
+  btn.title = open ? "Hide tools" : "Show tools";
+}
+
+function wireSidebarToggle(): void {
+  const btn = document.getElementById("sidebar-toggle") as HTMLButtonElement;
+  btn.addEventListener("click", () => setSidebarOpen(btn.getAttribute("aria-expanded") !== "true"));
+}
+
 // --- DOM controls ---------------------------------------------------------
 function setTool(t: Tool): void {
   tool = t;
   document.querySelectorAll<HTMLButtonElement>("#tools .tool").forEach((b) => {
     b.classList.toggle("active", b.dataset.tool === t);
+  });
+}
+
+function setStrokeScale(value: number): void {
+  const slider = document.getElementById("stroke-slider") as HTMLInputElement;
+  const min = parseFloat(slider.min);
+  const max = parseFloat(slider.max);
+  const v = Math.max(min, Math.min(max, value));
+  strokeScale = v;
+  slider.value = String(v);
+}
+
+function strokeSliderFromClientX(clientX: number): void {
+  const slider = document.getElementById("stroke-slider") as HTMLInputElement;
+  const rect = slider.getBoundingClientRect();
+  if (rect.width <= 0) return;
+  const min = parseFloat(slider.min);
+  const max = parseFloat(slider.max);
+  const t = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  setStrokeScale(min + t * (max - min));
+}
+
+function wireStrokeSlider(): void {
+  const panel = document.getElementById("stroke-panel") as HTMLElement;
+  const slider = document.getElementById("stroke-slider") as HTMLInputElement;
+
+  const begin = (e: PointerEvent): void => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    strokeSliderActive = true;
+    panel.setPointerCapture(e.pointerId);
+    strokeSliderFromClientX(e.clientX);
+  };
+
+  const move = (e: PointerEvent): void => {
+    if (!panel.hasPointerCapture(e.pointerId)) return;
+    e.preventDefault();
+    strokeSliderFromClientX(e.clientX);
+  };
+
+  const end = (e: PointerEvent): void => {
+    if (panel.hasPointerCapture(e.pointerId)) {
+      panel.releasePointerCapture(e.pointerId);
+    }
+    strokeSliderActive = false;
+    if (document.activeElement === slider) slider.blur();
+  };
+
+  panel.addEventListener("pointerdown", begin, { capture: true });
+  panel.addEventListener("pointermove", move);
+  panel.addEventListener("pointerup", end);
+  panel.addEventListener("pointercancel", end);
+  panel.addEventListener("lostpointercapture", () => {
+    strokeSliderActive = false;
+  });
+
+  slider.addEventListener("input", (e) => {
+    strokeScale = parseFloat((e.target as HTMLInputElement).value);
   });
 }
 
@@ -569,9 +645,7 @@ function wireControls(): void {
     net.send({ type: "erase" });
   });
 
-  (document.getElementById("stroke-slider") as HTMLInputElement).addEventListener("input", (e) => {
-    strokeScale = parseFloat((e.target as HTMLInputElement).value);
-  });
+  wireStrokeSlider();
 
   const framesInput = document.getElementById("frames-input") as HTMLInputElement;
   framesInput.value = String(DEFAULT_FRAMES);
@@ -616,8 +690,8 @@ function loop(now: number): void {
   if (projector) {
     drawProjector();
   } else {
-    drawFrameStrip();
     drawPaper();
+    drawFrameStrip();
     drawShapePreview();
   }
   renderer.endScreen();
@@ -681,9 +755,7 @@ function hitFrameStripClient(clientX: number, clientY: number): number | null {
 }
 
 function drawLoopPreview(): void {
-  syncFrameStripVisibility();
-  const el = document.getElementById("loop-preview") as HTMLElement;
-  if (el.classList.contains("hidden") || frames.count() <= 1) return;
+  if (projector) return;
   renderer.blitFrameFill(loopPreviewCanvas, frames.getFrame(frames.getLoopIndex()));
 }
 

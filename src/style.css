@@ -11,6 +11,15 @@
   --picker-size: 150px;
   --sidebar-pad: 10px;
   --panel-pad: 10px;
+  --sidebar-toggle-line-height: 1px;
+  --sidebar-toggle-line-gap: 2px;
+  --sidebar-toggle-line-inset: 40px;
+  --sidebar-toggle-bar-height: calc(
+    var(--sidebar-toggle-line-height) * 3 + var(--sidebar-toggle-line-gap) * 2
+  );
+  --sidebar-toggle-margin: 4px;
+  --sidebar-toggle-margin-bottom: 4px;
+  --sidebar-toggle-collapsed-margin: 2px;
   --sidebar-width: calc(var(--picker-size) + var(--panel-pad) * 2 + var(--sidebar-pad) * 2);
 }
 
@@ -61,12 +70,81 @@ body {
   pointer-events: auto;
 }
 
-#sidebar > .panel {
+#sidebar > .panel,
+#sidebar-tools > .panel {
   flex-shrink: 0;
 }
 
 #sidebar > .panel--loop-preview {
   flex-shrink: 0;
+}
+
+.sidebar-toggle {
+  position: absolute;
+  z-index: 2;
+  top: var(--sidebar-toggle-margin);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sidebar-toggle-line-gap);
+  width: var(--picker-size);
+  height: var(--sidebar-toggle-bar-height);
+  padding: 0 var(--sidebar-toggle-line-inset);
+  box-sizing: border-box;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #888888;
+  cursor: pointer;
+}
+.sidebar-toggle:hover {
+  background: transparent;
+  color: var(--text);
+}
+.sidebar-toggle__line {
+  display: block;
+  width: 100%;
+  height: var(--sidebar-toggle-line-height);
+  background: #5e5e72;
+  border-radius: 1px;
+}
+
+.sidebar-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+#sidebar.collapsed .sidebar-tools > .panel:not(.panel--color),
+#sidebar.collapsed .panel--frames {
+  display: none;
+}
+#sidebar.collapsed .panel--color #color-picker,
+#sidebar.collapsed .panel--color #swatches {
+  display: none;
+}
+#sidebar.collapsed .panel--color {
+  height: calc(
+    var(--sidebar-toggle-bar-height) + var(--sidebar-toggle-collapsed-margin) * 2
+  );
+  min-height: calc(
+    var(--sidebar-toggle-bar-height) + var(--sidebar-toggle-collapsed-margin) * 2
+  );
+  max-height: calc(
+    var(--sidebar-toggle-bar-height) + var(--sidebar-toggle-collapsed-margin) * 2
+  );
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: none;
+}
+#sidebar.collapsed .panel--color .sidebar-toggle {
+  top: var(--sidebar-toggle-collapsed-margin);
 }
 
 .panel {
@@ -92,6 +170,12 @@ body {
 }
 
 /* color picker */
+.panel--color {
+  position: relative;
+  padding-top: calc(
+    var(--sidebar-toggle-margin) + var(--sidebar-toggle-bar-height) + var(--sidebar-toggle-margin-bottom)
+  );
+}
 #color-picker {
   display: flex;
   flex-direction: column;
@@ -213,8 +297,10 @@ button.danger:hover {
   width: 100%;
   pointer-events: none;
 }
-#sidebar > .panel--frames {
+#sidebar-tools > .panel--frames {
   pointer-events: auto;
+  flex: 1;
+  min-height: 0;
 }
 .panel--frames.hidden {
   display: none;
@@ -252,6 +338,55 @@ input[type="number"] {
 input[type="range"] {
   width: 100%;
   accent-color: #fff;
+}
+
+#stroke-panel {
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#stroke-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#stroke-slider:focus,
+#stroke-slider:focus-visible {
+  outline: none;
+}
+#stroke-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
+}
+#stroke-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+}
+#stroke-slider::-moz-range-track {
+  height: 4px;
+  border: none;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
+}
+#stroke-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
 }
 
 #ws-connect {
