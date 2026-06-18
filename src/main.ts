@@ -723,11 +723,15 @@ function blobToDataURL(blob: Blob): Promise<string> {
   });
 }
 
-async function captureFrames(): Promise<string[]> {
+async function captureFrames(
+  onProgress?: (current: number, total: number) => void,
+): Promise<string[]> {
+  const total = frames.count();
   const out: string[] = [];
-  for (let i = 0; i < frames.count(); i++) {
+  for (let i = 0; i < total; i++) {
     const blob = await renderer.readFrameToBlob(frames.getFrame(i), "image/png");
     out.push(await blobToDataURL(blob));
+    onProgress?.(i + 1, total);
   }
   return out;
 }
@@ -762,10 +766,13 @@ function wireGallery(): void {
     busy = true;
     btn.disabled = true;
     btn.classList.remove("sent", "failed");
-    btn.textContent = "SENDING…";
+    const total = frames.count();
+    btn.textContent = `(0/${total})`;
     try {
       const payload = {
-        frames: await captureFrames(),
+        frames: await captureFrames((current, n) => {
+          btn.textContent = `(${current}/${n})`;
+        }),
         speed: frames.frameSpeed,
         width: frames.width,
         height: frames.height,
