@@ -363,12 +363,13 @@ export class Renderer {
       let offset = 0;
       while (offset < batch.count) {
         const chunk = Math.min(batch.count - offset, maxChunk);
+        // dataOffset/size are in Float32 elements, not bytes (WebGPU spec).
         this.device.queue.writeBuffer(
           this.brushInstances,
           0,
           batch.data as BufferSource,
-          offset * Renderer.BRUSH_FLOATS * 4,
-          chunk * Renderer.BRUSH_FLOATS * 4,
+          offset * Renderer.BRUSH_FLOATS,
+          chunk * Renderer.BRUSH_FLOATS,
         );
 
         const pass = encoder.beginRenderPass({
