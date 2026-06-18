@@ -124,6 +124,15 @@ body {
   min-height: 0;
   overflow: hidden;
 }
+#sidebar.collapsed {
+  bottom: auto;
+  height: fit-content;
+}
+#sidebar.collapsed > .sidebar-tools {
+  flex: 0 0 auto;
+  min-height: 0;
+  pointer-events: none;
+}
 #sidebar.collapsed .sidebar-tools > .panel:not(.panel--color),
 #sidebar.collapsed .panel--frames {
   display: none;
@@ -147,6 +156,7 @@ body {
   overflow: hidden;
   flex-shrink: 0;
   border: none;
+  pointer-events: auto;
 }
 #sidebar.collapsed .panel--color .sidebar-toggle {
   top: var(--sidebar-toggle-collapsed-margin);

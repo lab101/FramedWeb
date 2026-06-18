@@ -81,6 +81,7 @@ async function boot(): Promise<void> {
   resize();
   frames.setup(DEFAULT_FRAMES, FRAME_W, FRAME_H);
   frames.frameSpeed = 8;
+  syncFrameStripVisibility();
 
   colorPicker = new ColorPicker();
   currentColor = colorPicker.getColor();
@@ -121,6 +122,12 @@ function resize(): void {
 function syncFrameStripVisibility(): void {
   const show = frames.count() > 1 && !projector;
   frameStripEl.classList.toggle("hidden", !show);
+  frameStripEl.hidden = !show;
+  needsRender = true;
+}
+
+function isFrameStripShown(): boolean {
+  return frames.count() > 1 && !projector && !frameStripEl.hidden;
 }
 
 function elementScreenRect(el: HTMLElement): ScreenRect | null {
@@ -140,7 +147,7 @@ function elementScreenRect(el: HTMLElement): ScreenRect | null {
 function updateFrameStripLayout(): FrameStripLayout | null {
   syncFrameStripVisibility();
   const el = frameStripEl;
-  if (el.classList.contains("hidden") || frames.count() <= 1) {
+  if (!isFrameStripShown()) {
     frameStripSpacerEl.style.height = "0px";
     return null;
   }
@@ -186,7 +193,7 @@ function frameThumbContentY(index: number, thumbHCss: number, gapCss: number): n
 
 function scrollFrameStripToIndex(index: number, smooth = true): void {
   const el = frameStripEl;
-  if (el.classList.contains("hidden") || frames.count() <= 1) return;
+  if (!isFrameStripShown()) return;
 
   updateFrameStripLayout();
 
@@ -577,6 +584,10 @@ function setSidebarOpen(open: boolean): void {
   sidebar.classList.toggle("collapsed", !open);
   btn.setAttribute("aria-expanded", String(open));
   btn.title = open ? "Hide tools" : "Show tools";
+  needsRender = true;
+  if (open) {
+    requestAnimationFrame(() => scrollFrameStripToIndex(frames.getActiveFrame(), false));
+  }
 }
 
 function wireSidebarToggle(): void {
@@ -806,7 +817,7 @@ let needsRender = true;
 // unchanged (and nothing is actively animating) we skip the whole screen pass,
 // so an idle, paused canvas costs almost nothing.
 function sceneSignature(): string {
-  const scroll = frameStripEl.classList.contains("hidden") ? 0 : Math.round(frameStripEl.scrollTop);
+  const scroll = isFrameStripShown() ? Math.round(frameStripEl.scrollTop) : 0;
   return (
     `${canvas.width}x${canvas.height}|${view.zoom.toFixed(4)}|` +
     `${Math.round(view.panX)},${Math.round(view.panY)}|` +
