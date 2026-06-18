@@ -31,6 +31,31 @@
     <div id="gallery-status" class="gallery-status"></div>
     <div id="gallery-sentinel" aria-hidden="true"></div>
 
+    <div
+      id="gallery-lightbox"
+      class="gallery-lightbox hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-hidden="true"
+      aria-label="Animation preview"
+    >
+      <div class="gallery-lightbox__backdrop"></div>
+      <div class="gallery-lightbox__frame">
+        <button type="button" class="gallery-lightbox__close" aria-label="Close">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M4 4 L12 12 M12 4 L4 12"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+        <canvas class="gallery-lightbox__canvas" aria-hidden="true"></canvas>
+      </div>
+    </div>
+
     <script type="module" src="/src/gallery.ts"></script>
   </body>
 </html>
