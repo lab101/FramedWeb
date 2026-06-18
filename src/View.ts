@@ -96,6 +96,11 @@ export class View {
     }
   }
 
+  // Whether the zoom spring is still settling (drives on-demand rendering).
+  isAnimating(): boolean {
+    return this.zoomAnimating;
+  }
+
   // Stop chasing a pending zoom (e.g. when the user starts panning).
   settleZoom(): void {
     this.targetZoom = this.zoom;

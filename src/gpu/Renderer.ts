@@ -74,6 +74,19 @@ export class Renderer {
   private previewUniform!: GPUBuffer;
   private previewBindGroups = new WeakMap<FrameTexture, GPUBindGroup>();
 
+  // Brush instances queued during the frame; flushed once per rAF (see flushBrush).
+  private brushPending = new Map<
+    FrameTexture,
+    { data: Float32Array; count: number; capacity: number }
+  >();
+  private static readonly BRUSH_FLOATS = 7;
+  private static readonly BRUSH_CHUNK = 20000;
+
+  // Reusable scratch arrays to avoid per-call allocations in hot draw paths.
+  private scratch4 = new Float32Array(4);
+  private scratch8 = new Float32Array(8);
+  private readonly previewUniformData = new Float32Array([2, -2, -1, 1, 1, 1, 1, 1]);
+
   background: [number, number, number, number] = [0.12, 0.12, 0.14, 1];
 
   async init(canvas: HTMLCanvasElement): Promise<boolean> {
@@ -310,40 +323,89 @@ export class Renderer {
     this.device.queue.submit([encoder.finish()]);
   }
 
-  // Draw a batch of soft brush dots into a frame texture.
+  // Queue soft brush dots for a frame texture; GPU work runs in flushBrush().
   // instanceData: 7 floats per dot [x, y, size, r, g, b, a]
   drawBrush(frame: FrameTexture, instanceData: Float32Array, count: number): void {
     if (count === 0) return;
-    this.device.queue.writeBuffer(
-      this.brushUniform,
-      0,
-      new Float32Array([frame.width, frame.height, 0, 0]),
-    );
-    this.device.queue.writeBuffer(this.brushInstances, 0, instanceData as BufferSource, 0, count * 7);
+    const stride = Renderer.BRUSH_FLOATS;
+    let batch = this.brushPending.get(frame);
+    if (!batch) {
+      batch = { data: new Float32Array(512 * stride), count: 0, capacity: 512 };
+      this.brushPending.set(frame, batch);
+    }
+    if (batch.count + count > batch.capacity) {
+      const capacity = Math.max(batch.capacity * 2, batch.count + count);
+      const next = new Float32Array(capacity * stride);
+      next.set(batch.data.subarray(0, batch.count * stride));
+      batch.data = next;
+      batch.capacity = capacity;
+    }
+    batch.data.set(instanceData.subarray(0, count * stride), batch.count * stride);
+    batch.count += count;
+  }
+
+  // Submit all queued brush work in one GPU submit (call once per display frame).
+  flushBrush(): void {
+    if (this.brushPending.size === 0) return;
 
     const encoder = this.device.createCommandEncoder();
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [
-        { view: frame.view, loadOp: "load", storeOp: "store" },
-      ],
-    });
-    pass.setPipeline(this.brushPipeline);
-    pass.setBindGroup(0, this.brushBindGroup);
-    pass.setVertexBuffer(0, this.brushInstances);
-    pass.draw(6, count);
-    pass.end();
+    const maxChunk = Renderer.BRUSH_CHUNK;
+
+    for (const [frame, batch] of this.brushPending) {
+      if (batch.count === 0) continue;
+
+      this.scratch4[0] = frame.width;
+      this.scratch4[1] = frame.height;
+      this.scratch4[2] = 0;
+      this.scratch4[3] = 0;
+      this.device.queue.writeBuffer(this.brushUniform, 0, this.scratch4);
+
+      let offset = 0;
+      while (offset < batch.count) {
+        const chunk = Math.min(batch.count - offset, maxChunk);
+        this.device.queue.writeBuffer(
+          this.brushInstances,
+          0,
+          batch.data as BufferSource,
+          offset * Renderer.BRUSH_FLOATS * 4,
+          chunk * Renderer.BRUSH_FLOATS * 4,
+        );
+
+        const pass = encoder.beginRenderPass({
+          colorAttachments: [{ view: frame.view, loadOp: "load", storeOp: "store" }],
+        });
+        pass.setPipeline(this.brushPipeline);
+        pass.setBindGroup(0, this.brushBindGroup);
+        pass.setVertexBuffer(0, this.brushInstances);
+        pass.draw(6, chunk);
+        pass.end();
+
+        offset += chunk;
+      }
+    }
+
     this.device.queue.submit([encoder.finish()]);
+    this.brushPending.clear();
+  }
+
+  discardBrushPending(): void {
+    this.brushPending.clear();
   }
 
   // Draw solid triangles into a frame texture (pixel coords).
   drawShape(frame: FrameTexture, verts: Float32Array, color: RGB): void {
     const vertCount = verts.length / 2;
     if (vertCount === 0) return;
-    this.device.queue.writeBuffer(
-      this.shapeUniform,
-      0,
-      new Float32Array([frame.width, frame.height, 0, 0, color.r, color.g, color.b, 1]),
-    );
+    const u = this.scratch8;
+    u[0] = frame.width;
+    u[1] = frame.height;
+    u[2] = 0;
+    u[3] = 0;
+    u[4] = color.r;
+    u[5] = color.g;
+    u[6] = color.b;
+    u[7] = 1;
+    this.device.queue.writeBuffer(this.shapeUniform, 0, u);
     this.device.queue.writeBuffer(this.shapeVerts, 0, verts as BufferSource);
 
     const encoder = this.device.createCommandEncoder();
@@ -421,11 +483,16 @@ export class Renderer {
     const oy = 1 - (rect.y / ch) * 2;
 
     const off = this.allocUniform(32);
-    this.device.queue.writeBuffer(
-      this.uniformRing,
-      off,
-      new Float32Array([sx, sy, ox, oy, tint, tint, tint, tint]),
-    );
+    const u = this.scratch8;
+    u[0] = sx;
+    u[1] = sy;
+    u[2] = ox;
+    u[3] = oy;
+    u[4] = tint;
+    u[5] = tint;
+    u[6] = tint;
+    u[7] = tint;
+    this.device.queue.writeBuffer(this.uniformRing, off, u);
     this.pass.setPipeline(this.blitPipeline);
     this.pass.setBindGroup(0, frame.blitBindGroup, [off]);
     this.pass.draw(6);
@@ -442,7 +509,12 @@ export class Renderer {
     this.overlayVertOffset += Math.ceil((clipVerts.byteLength) / 4) * 4;
 
     const off = this.allocUniform(16);
-    this.device.queue.writeBuffer(this.uniformRing, off, new Float32Array(color));
+    const c = this.scratch4;
+    c[0] = color[0];
+    c[1] = color[1];
+    c[2] = color[2];
+    c[3] = color[3];
+    this.device.queue.writeBuffer(this.uniformRing, off, c);
 
     this.pass.setPipeline(this.overlayPipeline);
     this.pass.setBindGroup(0, this.overlayBindGroup, [off]);
@@ -502,11 +574,7 @@ export class Renderer {
 
     const previewBindGroup = this.previewBindGroupFor(frame);
 
-    this.device.queue.writeBuffer(
-      this.previewUniform,
-      0,
-      new Float32Array([2, -2, -1, 1, 1, 1, 1, 1]),
-    );
+    this.device.queue.writeBuffer(this.previewUniform, 0, this.previewUniformData);
 
     const encoder = this.device.createCommandEncoder();
     const view = ctx.getCurrentTexture().createView();
@@ -530,6 +598,7 @@ export class Renderer {
 
   // Read a frame texture back into a PNG blob (frames are opaque rgba8unorm).
   async readFrameToBlob(frame: FrameTexture, type = "image/png", quality?: number): Promise<Blob> {
+    this.flushBrush();
     const { width, height } = frame;
     const bytesPerRow = Math.ceil((width * 4) / 256) * 256;
 

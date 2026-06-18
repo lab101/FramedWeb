@@ -12,6 +12,9 @@ const labelCanvas = document.getElementById("frame-label-canvas") as HTMLCanvasE
 const loopPreviewCanvas = document.getElementById("loop-preview-canvas") as HTMLCanvasElement;
 const stage = document.getElementById("stage") as HTMLElement;
 const noWebGPU = document.getElementById("no-webgpu") as HTMLElement;
+const frameStripEl = document.getElementById("frame-strip") as HTMLElement;
+const frameStripSpacerEl = document.getElementById("frame-strip-spacer") as HTMLElement;
+const labelCtx = labelCanvas.getContext("2d")!;
 
 const FRAME_W = 1920;
 const FRAME_H = 1080;
@@ -44,6 +47,13 @@ let lastPan: [number, number] = [0, 0];
 
 let dpr = Math.max(1, window.devicePixelRatio || 1);
 let thumbHits: Array<{ rect: ScreenRect; index: number }> = [];
+
+// Canvas client rect cached for the duration of one render frame so the many
+// coordinate conversions don't each trigger a synchronous layout/reflow.
+let frameCanvasRect: DOMRect | null = null;
+function canvasRect(): DOMRect {
+  return frameCanvasRect ?? canvas.getBoundingClientRect();
+}
 
 interface FrameStripLayout {
   stripX: number;
@@ -102,22 +112,26 @@ function resize(): void {
   canvas.height = h;
   labelCanvas.width = w;
   labelCanvas.height = h;
+  // Backing stores were just resized/cleared; force the cached redraws to run.
+  needsRender = true;
+  lastLoopPreviewIndex = -1;
+  lastLabelSig = "";
 }
 
 function syncFrameStripVisibility(): void {
   const show = frames.count() > 1 && !projector;
-  (document.getElementById("frame-strip") as HTMLElement).classList.toggle("hidden", !show);
+  frameStripEl.classList.toggle("hidden", !show);
 }
 
 function elementScreenRect(el: HTMLElement): ScreenRect | null {
-  const canvasRect = canvas.getBoundingClientRect();
+  const cRect = canvasRect();
   const elRect = el.getBoundingClientRect();
   if (elRect.width <= 0 || elRect.height <= 0) return null;
-  const sx = canvas.width / canvasRect.width;
-  const sy = canvas.height / canvasRect.height;
+  const sx = canvas.width / cRect.width;
+  const sy = canvas.height / cRect.height;
   return {
-    x: (elRect.left - canvasRect.left) * sx,
-    y: (elRect.top - canvasRect.top) * sy,
+    x: (elRect.left - cRect.left) * sx,
+    y: (elRect.top - cRect.top) * sy,
     w: elRect.width * sx,
     h: elRect.height * sy,
   };
@@ -125,10 +139,9 @@ function elementScreenRect(el: HTMLElement): ScreenRect | null {
 
 function updateFrameStripLayout(): FrameStripLayout | null {
   syncFrameStripVisibility();
-  const el = document.getElementById("frame-strip") as HTMLElement;
-  const spacer = document.getElementById("frame-strip-spacer") as HTMLElement;
+  const el = frameStripEl;
   if (el.classList.contains("hidden") || frames.count() <= 1) {
-    spacer.style.height = "0px";
+    frameStripSpacerEl.style.height = "0px";
     return null;
   }
 
@@ -137,21 +150,22 @@ function updateFrameStripLayout(): FrameStripLayout | null {
   const thumbHCss = el.clientWidth / aspect;
   const gapCss = FRAME_STRIP_GAP_CSS;
   const contentCss = n * thumbHCss + (n - 1) * gapCss;
-  spacer.style.height = `${contentCss}px`;
+  frameStripSpacerEl.style.height = `${contentCss}px`;
 
   const base = elementScreenRect(el);
   if (!base) return null;
 
   const thumbW = base.w;
   const thumbH = thumbW / aspect;
+  const pxPerCss = canvas.height / canvasRect().height;
 
   return {
     stripX: base.x,
     stripW: base.w,
     thumbW,
     thumbH,
-    gap: gapCss * (canvas.height / canvas.getBoundingClientRect().height),
-    scrollTop: el.scrollTop * (canvas.height / canvas.getBoundingClientRect().height),
+    gap: gapCss * pxPerCss,
+    scrollTop: el.scrollTop * pxPerCss,
     visibleTop: base.y,
     visibleH: base.h,
     n,
@@ -171,7 +185,7 @@ function frameThumbContentY(index: number, thumbHCss: number, gapCss: number): n
 }
 
 function scrollFrameStripToIndex(index: number, smooth = true): void {
-  const el = document.getElementById("frame-strip") as HTMLElement;
+  const el = frameStripEl;
   if (el.classList.contains("hidden") || frames.count() <= 1) return;
 
   updateFrameStripLayout();
@@ -775,25 +789,57 @@ function wireGallery(): void {
 
 // --- render loop ----------------------------------------------------------
 let lastTime = performance.now();
+let lastSceneSig = "";
+// Forces a screen pass next frame regardless of the signature. Needed for the
+// initial draw and after any resize (setting canvas.width clears the backing
+// store even when the dimensions are unchanged).
+let needsRender = true;
+
+// Cheap fingerprint of everything that affects the main canvas. When it is
+// unchanged (and nothing is actively animating) we skip the whole screen pass,
+// so an idle, paused canvas costs almost nothing.
+function sceneSignature(): string {
+  const scroll = frameStripEl.classList.contains("hidden") ? 0 : Math.round(frameStripEl.scrollTop);
+  return (
+    `${canvas.width}x${canvas.height}|${view.zoom.toFixed(4)}|` +
+    `${Math.round(view.panX)},${Math.round(view.panY)}|` +
+    `${frames.getActiveFrame()}|${frames.getContentVersion()}|` +
+    `${frames.count()}|${projector ? 1 : 0}|${scroll}`
+  );
+}
 
 function loop(now: number): void {
   const dt = Math.min(0.1, (now - lastTime) / 1000);
   lastTime = now;
+  renderer.flushBrush();
   frames.update(dt);
   view.update(dt, canvas.width, canvas.height, frames.width, frames.height);
 
-  renderer.beginScreen();
-  if (projector) {
-    drawProjector();
-  } else {
-    drawPaper();
-    drawFrameStrip();
-    drawShapePreview();
-  }
-  renderer.endScreen();
-  drawLoopPreview();
-  drawFrameStripLabels();
+  frameCanvasRect = canvas.getBoundingClientRect();
 
+  // Continuous animation forces a redraw; otherwise only when something changed.
+  const animating = projector || drawing || panning || view.isAnimating();
+  const sig = sceneSignature();
+  if (needsRender || animating || sig !== lastSceneSig) {
+    needsRender = false;
+    lastSceneSig = sig;
+    const stripLayout = projector ? null : updateFrameStripLayout();
+
+    renderer.beginScreen();
+    if (projector) {
+      drawProjector();
+    } else {
+      drawPaper();
+      drawFrameStrip(stripLayout);
+      drawShapePreview();
+    }
+    renderer.endScreen();
+    drawFrameStripLabels(stripLayout);
+  }
+
+  drawLoopPreview();
+
+  frameCanvasRect = null;
   requestAnimationFrame(loop);
 }
 
@@ -826,7 +872,7 @@ function hitFrameStripClient(clientX: number, clientY: number): number | null {
   const layout = updateFrameStripLayout();
   if (!layout) return null;
 
-  const el = document.getElementById("frame-strip") as HTMLElement;
+  const el = frameStripEl;
   const elRect = el.getBoundingClientRect();
   if (
     clientX < elRect.left ||
@@ -850,14 +896,21 @@ function hitFrameStripClient(clientX: number, clientY: number): number | null {
   return index;
 }
 
+let lastLoopPreviewIndex = -1;
+let lastLoopPreviewVersion = -1;
 function drawLoopPreview(): void {
   if (projector) return;
-  renderer.blitFrameFill(loopPreviewCanvas, frames.getFrame(frames.getLoopIndex()));
+  const idx = frames.getLoopIndex();
+  const ver = frames.getContentVersion();
+  // The preview only changes when the displayed loop frame or its pixels change.
+  if (idx === lastLoopPreviewIndex && ver === lastLoopPreviewVersion) return;
+  lastLoopPreviewIndex = idx;
+  lastLoopPreviewVersion = ver;
+  renderer.blitFrameFill(loopPreviewCanvas, frames.getFrame(idx));
 }
 
-function drawFrameStrip(): void {
+function drawFrameStrip(layout: FrameStripLayout | null): void {
   thumbHits = [];
-  const layout = updateFrameStripLayout();
   if (!layout) return;
 
   const { stripX, thumbW, thumbH, gap, n } = layout;
@@ -878,13 +931,24 @@ function drawFrameStrip(): void {
   renderer.setScissor(null);
 }
 
-function drawFrameStripLabels(): void {
-  const ctx = labelCanvas.getContext("2d")!;
-  ctx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
-  if (projector || thumbHits.length === 0) return;
+let lastLabelSig = "";
+function drawFrameStripLabels(layout: FrameStripLayout | null): void {
+  const ctx = labelCtx;
 
-  const layout = updateFrameStripLayout();
-  if (!layout) return;
+  // Build a fingerprint of the visible labels; skip the (costly) 2D redraw when
+  // nothing about them changed — the canvas keeps its previous contents.
+  let sig = "empty";
+  if (!projector && layout && thumbHits.length > 0) {
+    sig = `${dpr}|${frames.getActiveFrame()}`;
+    for (const t of thumbHits) {
+      sig += `|${t.index}:${Math.round(t.rect.y)},${Math.round(t.rect.h)}`;
+    }
+  }
+  if (sig === lastLabelSig) return;
+  lastLabelSig = sig;
+
+  ctx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
+  if (sig === "empty" || !layout) return;
 
   const clip = frameStripScissor(layout);
   ctx.save();

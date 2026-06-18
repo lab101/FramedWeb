@@ -17,6 +17,9 @@ export class FrameManager {
   currentFrame = 0;
   frameSpeed = 8;
 
+  // Bumped whenever any frame's pixels change; lets the UI render on demand.
+  private contentVersion = 0;
+
   readonly onTouchedChange = new Signal<[boolean]>();
 
   constructor(private renderer: Renderer) {}
@@ -46,14 +49,22 @@ export class FrameManager {
       }
     }
     if (this.activeIndex >= this.frames.length) this.activeIndex = this.frames.length - 1;
+    this.contentVersion++;
     this.onTouchedChange.emit(this.allFramesTouched());
   }
 
   clearAll(): void {
+    this.renderer.discardBrushPending();
     for (const f of this.frames) this.renderer.clearFrame(f, FRAME_BG);
     this.activeIndex = 0;
     this.frameTouched.fill(false);
+    this.contentVersion++;
     this.onTouchedChange.emit(false);
+  }
+
+  // Monotonic counter of pixel changes across all frames.
+  getContentVersion(): number {
+    return this.contentVersion;
   }
 
   allFramesTouched(): boolean {
@@ -93,6 +104,7 @@ export class FrameManager {
       data[o + 6] = 1;
     }
     this.renderer.drawBrush(this.frames[id], data, points.length);
+    this.contentVersion++;
     this.markTouched(id);
   }
 
@@ -101,6 +113,7 @@ export class FrameManager {
     if (id < 0 || id >= this.frames.length) return;
     const radius = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
     this.renderer.drawShape(this.frames[id], circleVerts(p1[0], p1[1], radius), color);
+    this.contentVersion++;
     this.markTouched(id);
   }
 
@@ -108,6 +121,7 @@ export class FrameManager {
     const id = frameId < 0 ? this.activeIndex : frameId;
     if (id < 0 || id >= this.frames.length) return;
     this.renderer.drawShape(this.frames[id], rectVerts(p1[0], p1[1], p2[0], p2[1]), color);
+    this.contentVersion++;
     this.markTouched(id);
   }
 

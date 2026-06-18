@@ -54,11 +54,17 @@ fn fs(
 ) -> @location(0) vec4f {
   let distPx = length(uv - vec2f(0.5)) * diameterPx;
   let radiusPx = diameterPx * 0.5;
+  if (distPx > radiusPx) {
+    discard;
+  }
   // Never feather past the radius — small brushes would otherwise be semi-transparent.
   let feather = min(FEATHER_PX, radiusPx);
-  let cc = 1.0 - smoothstep(radiusPx - feather, radiusPx, distPx);
-  // premultiplied alpha, scaled by the dot's overall opacity (color.a)
-  let a = cc * color.a;
+  let innerPx = radiusPx - feather;
+  // Solid core: skip soft falloff for the interior (large brushes spend most pixels here).
+  var a = color.a;
+  if (distPx > innerPx) {
+    a = (1.0 - smoothstep(innerPx, radiusPx, distPx)) * color.a;
+  }
   return vec4f(color.rgb * a, a);
 }
 `;

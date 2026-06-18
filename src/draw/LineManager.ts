@@ -15,12 +15,18 @@ export class LineManager {
   readonly onNewPoints = new Signal<[BrushPoint[]]>();
 
   private pts: P[] = [];
+  // cum[i] = arc length from the first sample to pts[i] (cum[0] = 0).
+  private cum: number[] = [];
   private lastDrawDistance = 0;
   private minDistance = 0;
+  // Forward-only segment cursor for positionAt; valid because the resample
+  // distance only ever increases over the life of a stroke.
+  private segCursor = 1;
 
   newLine(x: number, y: number, z: number): void {
     this.clearPath();
     this.pts.push({ x, y, z });
+    this.cum.push(0);
   }
 
   lineTo(x: number, y: number, z: number): void {
@@ -28,7 +34,10 @@ export class LineManager {
       this.newLine(x, y, z);
       return;
     }
+    const prev = this.pts[this.pts.length - 1];
+    const d = Math.hypot(x - prev.x, y - prev.y);
     this.pts.push({ x, y, z });
+    this.cum.push(this.cum[this.cum.length - 1] + d);
     this.calculate();
   }
 
@@ -38,41 +47,39 @@ export class LineManager {
 
   private clearPath(): void {
     this.pts = [];
+    this.cum = [];
     this.lastDrawDistance = 0;
     this.minDistance = 0;
+    this.segCursor = 1;
   }
 
   private totalLength(): number {
-    let len = 0;
-    for (let i = 1; i < this.pts.length; i++) {
-      len += Math.hypot(
-        this.pts[i].x - this.pts[i - 1].x,
-        this.pts[i].y - this.pts[i - 1].y,
-      );
-    }
-    return len;
+    return this.cum.length ? this.cum[this.cum.length - 1] : 0;
   }
 
-  // Interpolate position + size at a given arc-length distance.
+  // Interpolate position + size at a given arc-length distance. Callers pass
+  // monotonically increasing distances, so the segment cursor never rewinds —
+  // amortizing the whole stroke's resampling to O(n).
   private positionAt(distance: number): P {
-    if (this.pts.length === 1 || distance <= 0) return this.pts[0];
-    let acc = 0;
-    for (let i = 1; i < this.pts.length; i++) {
-      const a = this.pts[i - 1];
-      const b = this.pts[i];
-      const segLen = Math.hypot(b.x - a.x, b.y - a.y);
-      if (segLen === 0) continue;
-      if (acc + segLen >= distance) {
-        const t = (distance - acc) / segLen;
-        return {
-          x: a.x + (b.x - a.x) * t,
-          y: a.y + (b.y - a.y) * t,
-          z: a.z + (b.z - a.z) * t,
-        };
-      }
-      acc += segLen;
+    const pts = this.pts;
+    if (pts.length === 1 || distance <= 0) return pts[0];
+
+    while (this.segCursor < pts.length && this.cum[this.segCursor] < distance) {
+      this.segCursor++;
     }
-    return this.pts[this.pts.length - 1];
+    if (this.segCursor >= pts.length) return pts[pts.length - 1];
+
+    const i = this.segCursor;
+    const a = pts[i - 1];
+    const b = pts[i];
+    const segLen = this.cum[i] - this.cum[i - 1];
+    if (segLen === 0) return b;
+    const t = (distance - this.cum[i - 1]) / segLen;
+    return {
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+      z: a.z + (b.z - a.z) * t,
+    };
   }
 
   private calculate(): void {
@@ -86,7 +93,10 @@ export class LineManager {
       const p = this.positionAt(newDrawPosition);
       out.push([p.x, p.y, p.z]);
 
-      this.minDistance = Math.max(2.8, p.z * 0.17);
+      // Slightly wider spacing on large brushes to cut overdraw; small sizes unchanged.
+      const base = p.z * 0.17;
+      const extra = Math.max(0, (p.z - 60) * 0.02);
+      this.minDistance = Math.max(2.8, base + extra);
       this.lastDrawDistance = newDrawPosition;
       newDrawPosition = this.lastDrawDistance + this.minDistance;
     }
