@@ -27,6 +27,9 @@ export class LineManager {
     this.clearPath();
     this.pts.push({ x, y, z });
     this.cum.push(0);
+    // Place a dot on touch/click even if the pointer never moves.
+    this.onNewPoints.emit([[x, y, z]]);
+    this.minDistance = this.spacingFor(z);
   }
 
   lineTo(x: number, y: number, z: number): void {
@@ -94,13 +97,17 @@ export class LineManager {
       out.push([p.x, p.y, p.z]);
 
       // Slightly wider spacing on large brushes to cut overdraw; small sizes unchanged.
-      const base = p.z * 0.17;
-      const extra = Math.max(0, (p.z - 60) * 0.02);
-      this.minDistance = Math.max(2.8, base + extra);
+      this.minDistance = this.spacingFor(p.z);
       this.lastDrawDistance = newDrawPosition;
       newDrawPosition = this.lastDrawDistance + this.minDistance;
     }
 
     if (out.length > 0) this.onNewPoints.emit(out);
+  }
+
+  private spacingFor(z: number): number {
+    const base = z * 0.17;
+    const extra = Math.max(0, (z - 60) * 0.02);
+    return Math.max(2.8, base + extra);
   }
 }
