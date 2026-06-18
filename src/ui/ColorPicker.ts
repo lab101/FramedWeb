@@ -4,25 +4,35 @@ import type { RGB } from "../draw/types";
 
 const TWO_PI = Math.PI * 2;
 
-// HSB color picker: hue/saturation square at full brightness.
+// HSB color picker: hue/saturation square + brightness strip.
 export class ColorPicker {
   readonly onChange = new Signal<[RGB]>();
 
   private square: HTMLCanvasElement;
   private squareCtx: CanvasRenderingContext2D;
+  private brightnessStrip: HTMLCanvasElement;
+  private brightnessCtx: CanvasRenderingContext2D;
   private swatchHost: HTMLElement;
 
   private h = 345; // 0..360
   private s = 0.85; // 0..1
+  private v = 1; // brightness 0..1
   private recents: RGB[] = [];
 
   constructor() {
     this.square = document.getElementById("hsb-square") as HTMLCanvasElement;
+    this.brightnessStrip = document.getElementById("brightness-strip") as HTMLCanvasElement;
     this.swatchHost = document.getElementById("swatches") as HTMLElement;
     this.squareCtx = this.square.getContext("2d")!;
+    this.brightnessCtx = this.brightnessStrip.getContext("2d")!;
 
     this.bind(this.square, (x, y) => {
       this.setFromPolar(x, y);
+      this.emit(false);
+    });
+
+    this.bind(this.brightnessStrip, (x) => {
+      this.v = clamp(x, 0, 1);
       this.emit(false);
     });
 
@@ -30,7 +40,7 @@ export class ColorPicker {
   }
 
   getColor(): RGB {
-    return hsvToRgb(this.h, this.s, 1);
+    return hsvToRgb(this.h, this.s, this.v);
   }
 
   private emit(markRecent: boolean): void {
@@ -75,6 +85,8 @@ export class ColorPicker {
   private drawAll(): void {
     this.drawHSBOverview();
     this.drawPickerDot();
+    this.drawBrightnessStrip();
+    this.drawBrightnessMarker();
   }
 
   // Polar HSB field: angle -> hue, radius -> saturation.
@@ -103,7 +115,7 @@ export class ColorPicker {
     const angle = Math.atan2(toCenterY, toCenterX);
     const radius = Math.hypot(toCenterX, toCenterY) * 2;
     const hue = ((angle / TWO_PI) + 0.5) * 360;
-    return hsvToRgb(hue, radius, 1);
+    return hsvToRgb(hue, radius, this.v);
   }
 
   private setFromPolar(tx: number, ty: number): void {
@@ -139,6 +151,45 @@ export class ColorPicker {
     ctx.stroke();
   }
 
+  // Horizontal gradient: black -> current hue/sat at full brightness.
+  private drawBrightnessStrip(): void {
+    const w = this.brightnessStrip.width;
+    const hgt = this.brightnessStrip.height;
+    const img = this.brightnessCtx.createImageData(w, hgt);
+    const data = img.data;
+
+    for (let x = 0; x < w; x++) {
+      const rgb = hsvToRgb(this.h, this.s, (x + 0.5) / w);
+      const r = Math.round(rgb.r * 255);
+      const g = Math.round(rgb.g * 255);
+      const b = Math.round(rgb.b * 255);
+      for (let y = 0; y < hgt; y++) {
+        const i = (y * w + x) * 4;
+        data[i] = r;
+        data[i + 1] = g;
+        data[i + 2] = b;
+        data[i + 3] = 255;
+      }
+    }
+    this.brightnessCtx.putImageData(img, 0, 0);
+  }
+
+  private drawBrightnessMarker(): void {
+    const w = this.brightnessStrip.width;
+    const hgt = this.brightnessStrip.height;
+    const px = this.v * w;
+    const ctx = this.brightnessCtx;
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(px, 3);
+    ctx.lineTo(px, hgt - 3);
+    ctx.stroke();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
   private drawSwatches(): void {
     this.swatchHost.innerHTML = "";
     for (const c of this.recents) {
@@ -166,6 +217,7 @@ export class ColorPicker {
     }
     this.h = h;
     this.s = max === 0 ? 0 : d / max;
+    this.v = max;
     this.emit(false);
   }
 }
