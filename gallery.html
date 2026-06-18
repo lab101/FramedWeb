@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Framed · Gallery</title>
+    <link rel="stylesheet" href="/src/gallery.css" />
+  </head>
+  <body>
+    <div class="gallery-top">
+      <a class="back-link" href="/" title="Back to the drawing app">
+        <canvas class="back-link__bg" aria-hidden="true"></canvas>
+        <span class="back-link__label">
+          <svg class="back-link__icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M10 3 L5 8 L10 13"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          BACK TO DRAWING
+        </span>
+      </a>
+    </div>
+
+    <main id="gallery" class="gallery-grid" aria-live="polite"></main>
+
+    <div id="gallery-status" class="gallery-status"></div>
+    <div id="gallery-sentinel" aria-hidden="true"></div>
+
+    <script type="module" src="/src/gallery.ts"></script>
+  </body>
+</html>

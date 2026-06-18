@@ -528,6 +528,46 @@ export class Renderer {
     this.device.queue.submit([encoder.finish()]);
   }
 
+  // Read a frame texture back into a PNG blob (frames are opaque rgba8unorm).
+  async readFrameToBlob(frame: FrameTexture, type = "image/png", quality?: number): Promise<Blob> {
+    const { width, height } = frame;
+    const bytesPerRow = Math.ceil((width * 4) / 256) * 256;
+
+    const readBuffer = this.device.createBuffer({
+      size: bytesPerRow * height,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    encoder.copyTextureToBuffer(
+      { texture: frame.texture },
+      { buffer: readBuffer, bytesPerRow, rowsPerImage: height },
+      { width, height },
+    );
+    this.device.queue.submit([encoder.finish()]);
+
+    await readBuffer.mapAsync(GPUMapMode.READ);
+    const mapped = new Uint8Array(readBuffer.getMappedRange());
+    const pixels = new Uint8ClampedArray(width * height * 4);
+    const rowBytes = width * 4;
+    for (let y = 0; y < height; y++) {
+      pixels.set(mapped.subarray(y * bytesPerRow, y * bytesPerRow + rowBytes), y * rowBytes);
+    }
+    readBuffer.unmap();
+    readBuffer.destroy();
+
+    const out = document.createElement("canvas");
+    out.width = width;
+    out.height = height;
+    const ctx = out.getContext("2d");
+    if (!ctx) throw new Error("2d context unavailable for frame export");
+    ctx.putImageData(new ImageData(pixels, width, height), 0, 0);
+
+    return await new Promise<Blob>((resolve, reject) => {
+      out.toBlob((b) => (b ? resolve(b) : reject(new Error("frame export failed"))), type, quality);
+    });
+  }
+
   // Convert a canvas-pixel rect to clip-space triangle verts (for previews).
   rectToClip(rect: ScreenRect): Float32Array {
     const cw = this.canvas.width;

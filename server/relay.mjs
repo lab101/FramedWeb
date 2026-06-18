@@ -21,6 +21,18 @@ wss.on("connection", (socket, req) => {
   console.log(`[framed-relay] client connected (${who}) — ${wss.clients.size} online`);
 
   socket.on("message", (data, isBinary) => {
+    if (!isBinary) {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg?.type === "ping") {
+          socket.send(JSON.stringify({ type: "pong" }));
+          return;
+        }
+        if (msg?.type === "pong") return;
+      } catch {
+        /* not JSON — broadcast as-is */
+      }
+    }
     for (const client of wss.clients) {
       if (client !== socket && client.readyState === 1 /* OPEN */) {
         client.send(data, { binary: isBinary });

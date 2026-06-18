@@ -50,7 +50,17 @@
               <img src="/ui/circle.png" alt="" width="24" height="24" />
             </button>
           </div>
-          <button id="clear-btn" class="danger" title="Clear all frames (X)">Clear all</button>
+          <div id="clear-wrap" class="clear-wrap">
+            <button id="clear-btn" class="danger" title="Clear all frames (X)">CLEAR ALL</button>
+            <div id="clear-confirm" class="clear-confirm">
+              <button id="clear-yes" class="clear-yes" type="button" title="Confirm clear">YES</button>
+              <button id="clear-no" class="clear-no" type="button" title="Cancel">NO</button>
+            </div>
+          </div>
+          <button id="gallery-btn" class="gallery-btn hidden" type="button" title="Save this animation to the gallery">
+            SEND TO GALLERY
+          </button>
+          <a id="gallery-link" class="gallery-link" href="/gallery.html" target="_blank" rel="noopener noreferrer" title="Open the gallery">View gallery →</a>
         </section>
 
         <section class="panel--frames" id="frame-strip" hidden>

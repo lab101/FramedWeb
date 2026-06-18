@@ -3,6 +3,10 @@ import type { DrawMessage } from "../draw/types";
 
 export type NetStatus = "offline" | "connecting" | "online" | "error";
 
+const PING_INTERVAL_MS = 25_000;
+const RECONNECT_BASE_MS = 1_000;
+const RECONNECT_MAX_MS = 30_000;
+
 // WebSocket transport for drawing messages.
 //
 // Design goals (from the brief):
@@ -23,37 +27,34 @@ export class NetworkManager {
 
   private ws: WebSocket | null = null;
   private status: NetStatus = "offline";
+  private url = "";
+  private shouldStayConnected = false;
+  private reconnectAttempt = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+
+  constructor() {
+    window.addEventListener("online", () => this.tryReconnect("network online"));
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") this.tryReconnect("tab visible");
+    });
+  }
 
   connect(url: string): void {
-    this.disconnect();
-    this.setStatus("connecting", url);
-
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(url);
-    } catch (err) {
-      this.setStatus("error", String(err));
-      return;
-    }
-    this.ws = ws;
-
-    ws.onopen = () => this.setStatus("online", url);
-    ws.onclose = () => {
-      if (this.ws === ws) {
-        this.ws = null;
-        this.setStatus("offline", "disconnected");
-      }
-    };
-    ws.onerror = () => this.setStatus("error", "connection error");
-    ws.onmessage = (ev) => this.handleRaw(ev.data);
+    this.shouldStayConnected = true;
+    this.url = url;
+    this.reconnectAttempt = 0;
+    this.clearReconnectTimer();
+    this.closeSocket();
+    this.openSocket();
   }
 
   disconnect(): void {
-    if (this.ws) {
-      this.ws.onclose = null;
-      this.ws.close();
-      this.ws = null;
-    }
+    this.shouldStayConnected = false;
+    this.url = "";
+    this.clearReconnectTimer();
+    this.stopPing();
+    this.closeSocket();
     this.setStatus("offline", "single user");
   }
 
@@ -68,13 +69,112 @@ export class NetworkManager {
     }
   }
 
+  private openSocket(): void {
+    this.setStatus("connecting", this.url);
+
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(this.url);
+    } catch (err) {
+      this.setStatus("error", String(err));
+      if (this.shouldStayConnected) this.scheduleReconnect();
+      return;
+    }
+    this.ws = ws;
+
+    ws.onopen = () => {
+      this.reconnectAttempt = 0;
+      this.setStatus("online", this.url);
+      this.startPing();
+    };
+    ws.onclose = () => {
+      this.stopPing();
+      if (this.ws === ws) {
+        this.ws = null;
+        if (this.shouldStayConnected) {
+          this.scheduleReconnect();
+        } else {
+          this.setStatus("offline", "disconnected");
+        }
+      }
+    };
+    ws.onerror = () => {
+      if (this.shouldStayConnected) {
+        this.setStatus("connecting", "connection lost, retrying…");
+      } else {
+        this.setStatus("error", "connection error");
+      }
+    };
+    ws.onmessage = (ev) => this.handleRaw(ev.data);
+  }
+
+  private closeSocket(): void {
+    if (!this.ws) return;
+    const ws = this.ws;
+    ws.onopen = null;
+    ws.onclose = null;
+    ws.onerror = null;
+    ws.onmessage = null;
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close();
+    }
+    this.ws = null;
+  }
+
+  private scheduleReconnect(): void {
+    if (!this.shouldStayConnected || this.reconnectTimer) return;
+    const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** this.reconnectAttempt);
+    this.reconnectAttempt++;
+    this.setStatus("connecting", `reconnecting in ${Math.round(delay / 1000)}s…`);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.shouldStayConnected) this.openSocket();
+    }, delay);
+  }
+
+  private tryReconnect(reason: string): void {
+    if (!this.shouldStayConnected || !this.url) return;
+    if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) return;
+    if (this.reconnectTimer) {
+      this.clearReconnectTimer();
+    }
+    this.reconnectAttempt = 0;
+    this.setStatus("connecting", reason);
+    this.openSocket();
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
+  private startPing(): void {
+    this.stopPing();
+    this.pingTimer = setInterval(() => this.sendPing(), PING_INTERVAL_MS);
+  }
+
+  private stopPing(): void {
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
+  }
+
+  private sendPing(): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: "ping" }));
+    }
+  }
+
   private handleRaw(data: unknown): void {
     const apply = (text: string) => {
       try {
-        const msg = JSON.parse(text) as DrawMessage;
-        if (msg && typeof (msg as { type?: unknown }).type === "string") {
-          this.onMessage.emit(msg);
-        }
+        const msg = JSON.parse(text) as { type?: string };
+        if (!msg || typeof msg.type !== "string") return;
+        if (msg.type === "ping" || msg.type === "pong") return;
+        this.onMessage.emit(msg as DrawMessage);
       } catch {
         /* ignore malformed messages */
       }

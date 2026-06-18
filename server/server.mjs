@@ -19,9 +19,12 @@ import { existsSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
+import { saveCreation, listCreations } from "./gallery.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const DIST_DIR = resolve(__dirname, "..", "dist");
+const GALLERY_DIR = resolve(__dirname, "..", "gallery");
+const MAX_UPLOAD_BYTES = 128 * 1024 * 1024; // 128 MB ceiling for a full animation
 const PORT = Number(process.env.PORT) || 5201;
 const HOST = process.env.HOST || "0.0.0.0";
 
@@ -51,6 +54,73 @@ function notFound(res, msg = "Not found") {
   res.end(msg);
 }
 
+function sendJson(res, status, obj) {
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(obj));
+}
+
+function readBody(req, limit = MAX_UPLOAD_BYTES) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        reject(new Error("payload too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+// Resolve a /media/* request to a file inside GALLERY_DIR, guarding traversal.
+function resolveMedia(urlPath) {
+  const decoded = decodeURIComponent(urlPath.split("?")[0].split("#")[0]);
+  const rel = normalize(decoded.replace(/^\/media\/?/, "")).replace(/^(\.\.[/\\])+/, "");
+  if (!rel || rel === "." || rel === sep) return null;
+  const filePath = join(GALLERY_DIR, rel);
+  if (filePath !== GALLERY_DIR && !filePath.startsWith(GALLERY_DIR + sep)) return null;
+  return filePath;
+}
+
+async function handleApi(req, res) {
+  const url = req.url || "/";
+
+  // Receive an animation and persist it as a new gallery creation.
+  if (req.method === "POST" && url.startsWith("/api/gallery")) {
+    try {
+      const body = await readBody(req);
+      const payload = JSON.parse(body.toString("utf8"));
+      const meta = await saveCreation(GALLERY_DIR, payload);
+      sendJson(res, 201, { ok: true, ...meta });
+    } catch (err) {
+      console.error("[framed] gallery save failed:", err.message);
+      sendJson(res, 400, { ok: false, error: err.message });
+    }
+    return true;
+  }
+
+  // Paginated list of creations (newest first) for the gallery's infinite scroll.
+  if (req.method === "GET" && url.startsWith("/api/creations")) {
+    try {
+      const params = new URL(url, "http://localhost").searchParams;
+      const offset = Math.max(0, parseInt(params.get("offset") || "0", 10) || 0);
+      const limit = Math.min(60, Math.max(1, parseInt(params.get("limit") || "12", 10) || 12));
+      sendJson(res, 200, await listCreations(GALLERY_DIR, offset, limit));
+    } catch (err) {
+      console.error("[framed] gallery list failed:", err.message);
+      sendJson(res, 500, { items: [], error: err.message });
+    }
+    return true;
+  }
+
+  return false;
+}
+
 // Resolve a request path to a file inside DIST_DIR, guarding against traversal.
 function resolveSafe(urlPath) {
   const decoded = decodeURIComponent(urlPath.split("?")[0].split("#")[0]);
@@ -74,10 +144,28 @@ async function serveFile(res, filePath) {
 }
 
 const server = createServer(async (req, res) => {
+  const url = req.url || "/";
+
+  // API routes (handle their own methods/responses).
+  if (url.startsWith("/api/")) {
+    if (await handleApi(req, res)) return;
+    res.writeHead(405, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Method not allowed");
+    return;
+  }
+
   if (req.method !== "GET" && req.method !== "HEAD") {
     res.writeHead(405, { "Content-Type": "text/plain; charset=utf-8", Allow: "GET, HEAD" });
     res.end("Method not allowed");
     return;
+  }
+
+  // Serve stored creation media (thumbnails + frames) from the gallery folder.
+  if (url.startsWith("/media/")) {
+    const mediaPath = resolveMedia(url);
+    if (!mediaPath) return notFound(res, "Forbidden");
+    if (await serveFile(res, mediaPath)) return;
+    return notFound(res);
   }
 
   if (!existsSync(DIST_DIR)) {
@@ -86,7 +174,7 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  const filePath = resolveSafe(req.url || "/");
+  const filePath = resolveSafe(url);
   if (!filePath) return notFound(res, "Forbidden");
 
   // Try the exact file, then fall back to index.html (SPA-style root serving).
@@ -103,6 +191,18 @@ wss.on("connection", (socket, req) => {
   console.log(`[framed] client connected (${who}) — ${wss.clients.size} online`);
 
   socket.on("message", (data, isBinary) => {
+    if (!isBinary) {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg?.type === "ping") {
+          socket.send(JSON.stringify({ type: "pong" }));
+          return;
+        }
+        if (msg?.type === "pong") return;
+      } catch {
+        /* not JSON — broadcast as-is */
+      }
+    }
     for (const client of wss.clients) {
       if (client !== socket && client.readyState === 1 /* OPEN */) {
         client.send(data, { binary: isBinary });

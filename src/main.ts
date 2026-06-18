@@ -16,8 +16,8 @@ const noWebGPU = document.getElementById("no-webgpu") as HTMLElement;
 const FRAME_W = 1920;
 const FRAME_H = 1080;
 const DEFAULT_FRAMES = 6;
-const MIN_BRUSH_SIZE = 24;
-const MAX_BRUSH_SIZE = 140;
+const MIN_BRUSH_SIZE = 12;
+const MAX_BRUSH_SIZE = 240;
 const WHEEL_ZOOM_BASE = 1.00025; // exponential wheel zoom; lower = slower
 const KEYBOARD_ZOOM_STEP = 1.02;
 
@@ -306,6 +306,7 @@ function wirePointer(): void {
 
     // pan with space or middle mouse
     if (spaceDown || e.button === 1) {
+      view.settleZoom();
       panning = true;
       lastPan = [dx, dy];
       canvas.setPointerCapture(e.pointerId);
@@ -640,9 +641,27 @@ function wireControls(): void {
     b.addEventListener("click", () => setTool(b.dataset.tool as Tool));
   });
 
-  (document.getElementById("clear-btn") as HTMLButtonElement).addEventListener("click", () => {
+  const clearWrap = document.getElementById("clear-wrap") as HTMLDivElement;
+  const clearBtn = document.getElementById("clear-btn") as HTMLButtonElement;
+  const clearYes = document.getElementById("clear-yes") as HTMLButtonElement;
+  const clearNo = document.getElementById("clear-no") as HTMLButtonElement;
+
+  const showClearConfirm = (show: boolean): void => {
+    clearWrap.classList.toggle("confirming", show);
+  };
+
+  clearBtn.addEventListener("click", () => {
+    showClearConfirm(true);
+  });
+
+  clearYes.addEventListener("click", () => {
     frames.clearAll();
     net.send({ type: "erase" });
+    showClearConfirm(false);
+  });
+
+  clearNo.addEventListener("click", () => {
+    showClearConfirm(false);
   });
 
   wireStrokeSlider();
@@ -676,6 +695,82 @@ function wireControls(): void {
       net.connect(url);
     }
   });
+
+  wireGallery();
+}
+
+// --- send to gallery ------------------------------------------------------
+function blobToDataURL(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function captureFrames(): Promise<string[]> {
+  const out: string[] = [];
+  for (let i = 0; i < frames.count(); i++) {
+    const blob = await renderer.readFrameToBlob(frames.getFrame(i), "image/png");
+    out.push(await blobToDataURL(blob));
+  }
+  return out;
+}
+
+function wireGallery(): void {
+  const btn = document.getElementById("gallery-btn") as HTMLButtonElement;
+  if (!btn) return;
+  const defaultLabel = btn.textContent ?? "SEND TO GALLERY";
+  let busy = false;
+
+  const syncVisibility = (): void => {
+    btn.classList.toggle("hidden", !frames.allFramesTouched());
+  };
+
+  frames.onTouchedChange.connect(syncVisibility);
+  syncVisibility();
+
+  const flash = (cls: string, label: string, revert = true): void => {
+    btn.classList.remove("sent", "failed");
+    if (cls) btn.classList.add(cls);
+    btn.textContent = label;
+    if (revert) {
+      window.setTimeout(() => {
+        btn.classList.remove("sent", "failed");
+        btn.textContent = defaultLabel;
+      }, 2200);
+    }
+  };
+
+  btn.addEventListener("click", async () => {
+    if (busy) return;
+    busy = true;
+    btn.disabled = true;
+    btn.classList.remove("sent", "failed");
+    btn.textContent = "SENDING…";
+    try {
+      const payload = {
+        frames: await captureFrames(),
+        speed: frames.frameSpeed,
+        width: frames.width,
+        height: frames.height,
+      };
+      const res = await fetch("/api/gallery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`server responded ${res.status}`);
+      flash("sent", "SENT ✓");
+    } catch (err) {
+      console.error("[framed] send to gallery failed:", err);
+      flash("failed", "FAILED — RETRY");
+    } finally {
+      busy = false;
+      btn.disabled = false;
+    }
+  });
 }
 
 // --- render loop ----------------------------------------------------------
@@ -685,6 +780,7 @@ function loop(now: number): void {
   const dt = Math.min(0.1, (now - lastTime) / 1000);
   lastTime = now;
   frames.update(dt);
+  view.update(dt, canvas.width, canvas.height, frames.width, frames.height);
 
   renderer.beginScreen();
   if (projector) {

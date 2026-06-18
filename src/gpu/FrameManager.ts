@@ -1,5 +1,6 @@
 import type { Renderer, FrameTexture } from "./Renderer";
 import type { RGB, BrushPoint } from "../draw/types";
+import { Signal } from "../util/signal";
 
 const FRAME_BG: RGB = { r: 0, g: 0, b: 0 }; // original fboBackground = black
 
@@ -7,6 +8,7 @@ const FRAME_BG: RGB = { r: 0, g: 0, b: 0 }; // original fboBackground = black
 // the active frame, drawing operations and the playback loop.
 export class FrameManager {
   private frames: FrameTexture[] = [];
+  private frameTouched: boolean[] = [];
   private activeIndex = 0;
   width = 1920;
   height = 1080;
@@ -15,6 +17,8 @@ export class FrameManager {
   currentFrame = 0;
   frameSpeed = 8;
 
+  readonly onTouchedChange = new Signal<[boolean]>();
+
   constructor(private renderer: Renderer) {}
 
   setup(nrOfFrames: number, width: number, height: number): void {
@@ -22,6 +26,7 @@ export class FrameManager {
     this.height = height;
     for (const f of this.frames) f.texture.destroy();
     this.frames = [];
+    this.frameTouched = [];
     this.changeNrOfFrames(nrOfFrames);
     this.activeIndex = 0;
   }
@@ -31,19 +36,38 @@ export class FrameManager {
     if (n < this.frames.length) {
       for (let i = n; i < this.frames.length; i++) this.frames[i].texture.destroy();
       this.frames.length = n;
+      this.frameTouched.length = n;
     } else {
       while (this.frames.length < n) {
         const f = this.renderer.createFrameTexture(this.width, this.height);
         this.renderer.clearFrame(f, FRAME_BG);
         this.frames.push(f);
+        this.frameTouched.push(false);
       }
     }
     if (this.activeIndex >= this.frames.length) this.activeIndex = this.frames.length - 1;
+    this.onTouchedChange.emit(this.allFramesTouched());
   }
 
   clearAll(): void {
     for (const f of this.frames) this.renderer.clearFrame(f, FRAME_BG);
     this.activeIndex = 0;
+    this.frameTouched.fill(false);
+    this.onTouchedChange.emit(false);
+  }
+
+  allFramesTouched(): boolean {
+    if (this.frames.length === 0) return false;
+    for (let i = 0; i < this.frames.length; i++) {
+      if (!this.frameTouched[i]) return false;
+    }
+    return true;
+  }
+
+  private markTouched(id: number): void {
+    if (id < 0 || id >= this.frames.length || this.frameTouched[id]) return;
+    this.frameTouched[id] = true;
+    this.onTouchedChange.emit(this.allFramesTouched());
   }
 
   update(dt: number): void {
@@ -69,6 +93,7 @@ export class FrameManager {
       data[o + 6] = 1;
     }
     this.renderer.drawBrush(this.frames[id], data, points.length);
+    this.markTouched(id);
   }
 
   drawCircle(p1: [number, number], p2: [number, number], color: RGB, frameId = -1): void {
@@ -76,12 +101,14 @@ export class FrameManager {
     if (id < 0 || id >= this.frames.length) return;
     const radius = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
     this.renderer.drawShape(this.frames[id], circleVerts(p1[0], p1[1], radius), color);
+    this.markTouched(id);
   }
 
   drawRectangle(p1: [number, number], p2: [number, number], color: RGB, frameId = -1): void {
     const id = frameId < 0 ? this.activeIndex : frameId;
     if (id < 0 || id >= this.frames.length) return;
     this.renderer.drawShape(this.frames[id], rectVerts(p1[0], p1[1], p2[0], p2[1]), color);
+    this.markTouched(id);
   }
 
   // ---- navigation --------------------------------------------------------
