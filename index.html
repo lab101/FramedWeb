@@ -90,15 +90,40 @@
         <div class="settings-panel">
           <section class="panel">
             <div class="panel-title">Animation</div>
-            <label class="row">
+            <label class="row row--frames">
               <span>Frames</span>
-              <input id="frames-input" type="number" min="1" max="60" value="6" />
+              <div class="frames-stepper">
+                <input id="frames-input" type="text" value="6" />
+                <div class="frames-stepper__buttons">
+                  <button
+                    id="frames-up"
+                    class="frames-step-btn"
+                    type="button"
+                    title="More frames"
+                    aria-label="Increase frame count"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <polyline points="6 15 12 9 18 15" />
+                    </svg>
+                  </button>
+                  <button
+                    id="frames-down"
+                    class="frames-step-btn"
+                    type="button"
+                    title="Fewer frames"
+                    aria-label="Decrease frame count"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
             </label>
             <label class="row">
               <span>Speed</span>
               <input id="speed-slider" type="range" min="0" max="80" step="1" value="8" />
             </label>
-            <div class="hint">← → to switch frame · onion skin shows previous frame</div>
           </section>
 
           <section class="panel">

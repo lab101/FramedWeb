@@ -455,6 +455,41 @@ input[type="text"] {
 input[type="number"] {
   width: 52px;
 }
+#frames-input {
+  width: 52px;
+}
+
+.frames-stepper {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+.frames-stepper__buttons {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  align-self: stretch;
+}
+.frames-step-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  min-width: 36px;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  touch-action: manipulation;
+}
+.frames-step-btn svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+.frames-step-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
 input[type="range"] {
   width: 100%;
   accent-color: #fff;

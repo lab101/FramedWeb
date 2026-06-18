@@ -19,6 +19,8 @@ const labelCtx = labelCanvas.getContext("2d")!;
 const FRAME_W = 1920;
 const FRAME_H = 1080;
 const DEFAULT_FRAMES = 6;
+const MIN_FRAMES = 1;
+const MAX_FRAMES = 60;
 const MIN_BRUSH_SIZE = 12;
 const MAX_BRUSH_SIZE = 240;
 const WHEEL_ZOOM_BASE = 1.00025; // exponential wheel zoom; lower = slower
@@ -279,9 +281,7 @@ function applyMessage(msg: DrawMessage): void {
       frames.clearAll();
       break;
     case "nrOfFrames":
-      frames.changeNrOfFrames(msg.value);
-      (document.getElementById("frames-input") as HTMLInputElement).value = String(msg.value);
-      syncFrameStripVisibility();
+      setFrameCount(msg.value, false);
       break;
     case "frameSpeed":
       frames.frameSpeed = msg.value;
@@ -661,6 +661,26 @@ function wireStrokeSlider(): void {
   });
 }
 
+function clampFrameCount(n: number): number {
+  return Math.max(MIN_FRAMES, Math.min(MAX_FRAMES, Math.round(n)));
+}
+
+function updateFrameStepperButtons(): void {
+  const n = frames.count();
+  (document.getElementById("frames-up") as HTMLButtonElement).disabled = n >= MAX_FRAMES;
+  (document.getElementById("frames-down") as HTMLButtonElement).disabled = n <= MIN_FRAMES;
+}
+
+function setFrameCount(n: number, broadcast = true): void {
+  const v = clampFrameCount(n);
+  const framesInput = document.getElementById("frames-input") as HTMLInputElement;
+  framesInput.value = String(v);
+  frames.changeNrOfFrames(v);
+  if (broadcast) net.send({ type: "nrOfFrames", value: v });
+  syncFrameStripVisibility();
+  updateFrameStepperButtons();
+}
+
 function wireControls(): void {
   document.querySelectorAll<HTMLButtonElement>("#tools .tool").forEach((b) => {
     b.addEventListener("click", () => setTool(b.dataset.tool as Tool));
@@ -694,12 +714,16 @@ function wireControls(): void {
   const framesInput = document.getElementById("frames-input") as HTMLInputElement;
   framesInput.value = String(DEFAULT_FRAMES);
   framesInput.addEventListener("change", () => {
-    const v = Math.max(1, Math.min(60, parseInt(framesInput.value) || 1));
-    framesInput.value = String(v);
-    frames.changeNrOfFrames(v);
-    net.send({ type: "nrOfFrames", value: v });
-    syncFrameStripVisibility();
+    setFrameCount(parseInt(framesInput.value) || MIN_FRAMES);
   });
+
+  (document.getElementById("frames-up") as HTMLButtonElement).addEventListener("click", () => {
+    setFrameCount(frames.count() + 1);
+  });
+  (document.getElementById("frames-down") as HTMLButtonElement).addEventListener("click", () => {
+    setFrameCount(frames.count() - 1);
+  });
+  updateFrameStepperButtons();
 
   const speed = document.getElementById("speed-slider") as HTMLInputElement;
   speed.value = String(frames.frameSpeed);
