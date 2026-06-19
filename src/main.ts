@@ -96,6 +96,7 @@ async function boot(): Promise<void> {
   wireKeyboard();
   wireControls();
   wireSettings();
+  wireHelp();
   wireSidebarToggle();
   wireNetwork();
 
@@ -496,7 +497,9 @@ function wireKeyboard(): void {
         setProjector(!projector);
         break;
       case "Escape":
-        if (isSettingsOpen()) {
+        if (isHelpOpen()) {
+          closeHelp();
+        } else if (isSettingsOpen()) {
           closeSettings();
         } else if (projector) {
           setProjector(false);
@@ -540,7 +543,10 @@ function toggleFullscreen(): void {
 function setProjector(on: boolean): void {
   projector = on;
   document.body.classList.toggle("projector", on);
-  if (on) closeSettings();
+  if (on) {
+    closeSettings();
+    closeHelp();
+  }
   syncFrameStripVisibility();
   // sidebar visibility changes the stage size; sync the backing store now
   resize();
@@ -550,7 +556,12 @@ function isSettingsOpen(): boolean {
   return !document.getElementById("settings-overlay")!.classList.contains("hidden");
 }
 
+function isHelpOpen(): boolean {
+  return !document.getElementById("help-overlay")!.classList.contains("hidden");
+}
+
 function openSettings(): void {
+  closeHelp();
   const overlay = document.getElementById("settings-overlay") as HTMLElement;
   const btn = document.getElementById("settings-btn") as HTMLButtonElement;
   overlay.classList.remove("hidden");
@@ -571,11 +582,40 @@ function toggleSettings(): void {
   else openSettings();
 }
 
+function openHelp(): void {
+  closeSettings();
+  const overlay = document.getElementById("help-overlay") as HTMLElement;
+  const btn = document.getElementById("help-btn") as HTMLButtonElement;
+  overlay.classList.remove("hidden");
+  overlay.setAttribute("aria-hidden", "false");
+  btn.setAttribute("aria-expanded", "true");
+}
+
+function closeHelp(): void {
+  const overlay = document.getElementById("help-overlay") as HTMLElement;
+  const btn = document.getElementById("help-btn") as HTMLButtonElement;
+  overlay.classList.add("hidden");
+  overlay.setAttribute("aria-hidden", "true");
+  btn.setAttribute("aria-expanded", "false");
+}
+
+function toggleHelp(): void {
+  if (isHelpOpen()) closeHelp();
+  else openHelp();
+}
+
 function wireSettings(): void {
   const btn = document.getElementById("settings-btn") as HTMLButtonElement;
-  const backdrop = document.querySelector(".settings-backdrop") as HTMLElement;
+  const backdrop = document.querySelector("#settings-overlay .settings-backdrop") as HTMLElement;
   btn.addEventListener("click", toggleSettings);
   backdrop.addEventListener("click", closeSettings);
+}
+
+function wireHelp(): void {
+  const btn = document.getElementById("help-btn") as HTMLButtonElement;
+  const backdrop = document.querySelector("#help-overlay .settings-backdrop") as HTMLElement;
+  btn.addEventListener("click", toggleHelp);
+  backdrop.addEventListener("click", closeHelp);
 }
 
 function setSidebarOpen(open: boolean): void {
