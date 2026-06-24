@@ -12,9 +12,10 @@ interface P {
 // spacing depends on the brush size (so the soft dots overlap into a smooth
 // line). z carries the per-point brush diameter in pixels.
 export class LineManager {
-  readonly onNewPoints = new Signal<[BrushPoint[]]>();
+  readonly onNewPoints = new Signal<[BrushPoint[], boolean]>();
 
   private pts: P[] = [];
+  private erasing = false;
   // cum[i] = arc length from the first sample to pts[i] (cum[0] = 0).
   private cum: number[] = [];
   private lastDrawDistance = 0;
@@ -23,12 +24,13 @@ export class LineManager {
   // distance only ever increases over the life of a stroke.
   private segCursor = 1;
 
-  newLine(x: number, y: number, z: number): void {
+  newLine(x: number, y: number, z: number, erasing = false): void {
+    this.erasing = erasing;
     this.clearPath();
     this.pts.push({ x, y, z });
     this.cum.push(0);
     // Place a dot on touch/click even if the pointer never moves.
-    this.onNewPoints.emit([[x, y, z]]);
+    this.onNewPoints.emit([[x, y, z]], this.erasing);
     this.minDistance = this.spacingFor(z);
   }
 
@@ -102,7 +104,7 @@ export class LineManager {
       newDrawPosition = this.lastDrawDistance + this.minDistance;
     }
 
-    if (out.length > 0) this.onNewPoints.emit(out);
+    if (out.length > 0) this.onNewPoints.emit(out, this.erasing);
   }
 
   private spacingFor(z: number): number {

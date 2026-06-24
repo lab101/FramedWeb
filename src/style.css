@@ -264,6 +264,11 @@ button.tool:hover {
   display: block;
   object-fit: contain;
 }
+.tool svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
 .tool.active {
   border-color: #fff;
   background: rgba(255, 255, 255, 0.8);
@@ -663,6 +668,10 @@ input[type="range"] {
 }
 #stage.panning #gpu-canvas {
   cursor: grab;
+}
+#stage.drop-target #gpu-canvas {
+  outline: 2px dashed rgba(255, 255, 255, 0.45);
+  outline-offset: -4px;
 }
 
 /* projector mode: hide UI chrome, show only the looping animation */

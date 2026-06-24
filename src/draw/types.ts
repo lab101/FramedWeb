@@ -5,7 +5,7 @@
 // external sources can feed drawings in over a WebSocket using a simple,
 // stable JSON schema.
 
-export type Tool = "brush" | "rectangle" | "circle";
+export type Tool = "brush" | "eraser" | "rectangle" | "circle";
 
 export interface RGB {
   r: number; // 0..1

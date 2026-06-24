@@ -2,7 +2,8 @@ import type { Renderer, FrameTexture } from "./Renderer";
 import type { RGB, BrushPoint } from "../draw/types";
 import { Signal } from "../util/signal";
 
-const FRAME_BG: RGB = { r: 0, g: 0, b: 0 }; // original fboBackground = black
+const FRAME_BG: RGB = { r: 0, g: 0, b: 0 };
+const FRAME_CLEAR_ALPHA = 0;
 
 // Manages the stack of animation frames (each an offscreen "paper" texture),
 // the active frame, drawing operations and the playback loop.
@@ -43,7 +44,7 @@ export class FrameManager {
     } else {
       while (this.frames.length < n) {
         const f = this.renderer.createFrameTexture(this.width, this.height);
-        this.renderer.clearFrame(f, FRAME_BG);
+        this.renderer.clearFrame(f, FRAME_BG, FRAME_CLEAR_ALPHA);
         this.frames.push(f);
         this.frameTouched.push(false);
       }
@@ -55,7 +56,7 @@ export class FrameManager {
 
   clearAll(): void {
     this.renderer.discardBrushPending();
-    for (const f of this.frames) this.renderer.clearFrame(f, FRAME_BG);
+    for (const f of this.frames) this.renderer.clearFrame(f, FRAME_BG, FRAME_CLEAR_ALPHA);
     this.activeIndex = 0;
     this.frameTouched.fill(false);
     this.contentVersion++;
@@ -108,6 +109,27 @@ export class FrameManager {
     this.markTouched(id);
   }
 
+  erasePoints(points: BrushPoint[], frameId = -1): void {
+    const id = frameId < 0 ? this.activeIndex : frameId;
+    if (id < 0 || id >= this.frames.length || points.length === 0) return;
+    const data = new Float32Array(points.length * 7);
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const o = i * 7;
+      data[o] = p[0];
+      data[o + 1] = p[1];
+      data[o + 2] = p[2];
+      data[o + 3] = 0;
+      data[o + 4] = 0;
+      data[o + 5] = 0;
+      data[o + 6] = 1;
+    }
+    this.renderer.drawBrush(this.frames[id], data, points.length, true);
+    this.renderer.flushBrush();
+    this.contentVersion++;
+    this.markTouched(id);
+  }
+
   drawCircle(p1: [number, number], p2: [number, number], color: RGB, frameId = -1): void {
     const id = frameId < 0 ? this.activeIndex : frameId;
     if (id < 0 || id >= this.frames.length) return;
@@ -150,7 +172,10 @@ export class FrameManager {
     return this.frames[this.activeIndex];
   }
   getLoopIndex(): number {
-    return Math.floor(this.currentFrame) % this.frames.length;
+    const n = this.frames.length;
+    if (n === 0) return 0;
+    const raw = Math.floor(this.currentFrame) % n;
+    return ((raw % n) + n) % n;
   }
 }
 

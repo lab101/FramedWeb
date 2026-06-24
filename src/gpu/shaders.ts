@@ -130,6 +130,58 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 }
 `;
 
+// Dot grid: procedural white dots in paper space, drawn on the screen background.
+export const DOT_GRID_WGSL = /* wgsl */ `
+struct U {
+  canvas: vec2f,
+  paperOrigin: vec2f,
+  paperScale: f32,
+  spacing: f32,
+  dotRadius: f32,
+  dotAlpha: f32,
+  _pad: vec2f,
+};
+@group(0) @binding(0) var<uniform> u: U;
+
+struct VSOut {
+  @builtin(position) pos: vec4f,
+  @location(0) screen: vec2f,
+};
+
+@vertex
+fn vs(@builtin(vertex_index) vi: u32) -> VSOut {
+  var q = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0),  vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  let clip = q[vi];
+  var o: VSOut;
+  o.pos = vec4f(clip, 0.0, 1.0);
+  o.screen = (clip * vec2f(0.5, -0.5) + vec2f(0.5, 0.5)) * u.canvas;
+  return o;
+}
+
+@fragment
+fn fs(@location(0) screen: vec2f) -> @location(0) vec4f {
+  let paper = (screen - u.paperOrigin) / u.paperScale;
+  let spacing = u.spacing;
+  let cell = floor(paper / spacing);
+  var alpha = 0.0;
+  for (var dy = -1; dy <= 1; dy++) {
+    for (var dx = -1; dx <= 1; dx++) {
+      let c = cell + vec2f(f32(dx), f32(dy));
+      let center = (c + vec2f(0.5, 0.5)) * spacing;
+      let distPx = length(paper - center) * u.paperScale;
+      alpha = max(alpha, 1.0 - smoothstep(u.dotRadius - 0.35, u.dotRadius + 0.35, distPx));
+    }
+  }
+  if (alpha <= 0.0) {
+    discard;
+  }
+  return vec4f(1.0, 1.0, 1.0, alpha * u.dotAlpha);
+}
+`;
+
 // Overlay: clip-space colored triangles drawn straight onto the screen,
 // used for the in-progress shape preview and the active-frame highlight.
 export const OVERLAY_WGSL = /* wgsl */ `

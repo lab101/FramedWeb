@@ -1,0 +1,13 @@
+export const FRAME_W = 1920;
+export const FRAME_H = 1080;
+export const DEFAULT_FRAMES = 6;
+export const MIN_FRAMES = 1;
+export const MAX_FRAMES = 60;
+export const MIN_BRUSH_SIZE = 12;
+export const MAX_BRUSH_SIZE = 240;
+export const WHEEL_ZOOM_BASE = 1.00025;
+export const KEYBOARD_ZOOM_STEP = 1.02;
+export const DOT_GRID_SPACING = 64;
+export const DOT_GRID_RADIUS = 1.0;
+export const DOT_GRID_ALPHA = 0.12;
+export const FRAME_STRIP_GAP_CSS = 4;
