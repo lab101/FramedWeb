@@ -130,6 +130,55 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 }
 `;
 
+// Flatten drawing layer over optional background into opaque RGB (alpha = 1).
+export const COMPOSITE_FRAME_WGSL = /* wgsl */ `
+struct U {
+  transform: vec4f,
+  tint: vec4f,
+  bgRect: vec4f,
+  flags: vec4f,
+};
+@group(0) @binding(0) var<uniform> u: U;
+@group(0) @binding(1) var samp: sampler;
+@group(0) @binding(2) var strokeTex: texture_2d<f32>;
+@group(0) @binding(3) var bgTex: texture_2d<f32>;
+
+struct VSOut {
+  @builtin(position) pos: vec4f,
+  @location(0) uv: vec2f,
+};
+
+@vertex
+fn vs(@builtin(vertex_index) vi: u32) -> VSOut {
+  var q = array<vec2f, 6>(
+    vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(0.0, 1.0),
+    vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0),
+  );
+  let p = q[vi];
+  let clip = vec2f(u.transform.z + p.x * u.transform.x,
+                   u.transform.w + p.y * u.transform.y);
+  var o: VSOut;
+  o.pos = vec4f(clip, 0.0, 1.0);
+  o.uv = p;
+  return o;
+}
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let stroke = textureSample(strokeTex, samp, uv);
+  let bgUv = (uv - u.bgRect.xy) / u.bgRect.zw;
+  let bgSample = textureSample(bgTex, samp, clamp(bgUv, vec2f(0.0), vec2f(1.0))).rgb;
+  let inBg = u.flags.x > 0.5 && all(bgUv >= vec2f(0.0)) && all(bgUv <= vec2f(1.0));
+  let under = select(vec3f(0.0), bgSample, inBg);
+  if (stroke.a <= 0.001) {
+    return vec4(under, 1.0) * u.tint;
+  }
+  let rgb = stroke.rgb / stroke.a;
+  let flat = vec4(mix(under, rgb, stroke.a), 1.0);
+  return flat * u.tint;
+}
+`;
+
 // Dot grid: procedural white dots in paper space, drawn on the screen background.
 export const DOT_GRID_WGSL = /* wgsl */ `
 struct U {

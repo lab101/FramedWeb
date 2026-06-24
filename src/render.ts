@@ -104,7 +104,8 @@ function drawPaper(app: App): void {
   blitFrameComposite(app, app.frames.getActiveTexture(), rect, 1);
   if (app.frames.count() > 1) {
     const prev = (active - 1 + app.frames.count()) % app.frames.count();
-    blitFrameComposite(app, app.frames.getFrame(prev), rect, 0.25);
+    // Onion skin overlays only the previous frame's strokes, not its background.
+    app.renderer.blit(app.frames.getFrame(prev), rect, 0.25);
   }
 }
 

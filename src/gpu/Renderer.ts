@@ -1,4 +1,4 @@
-import { BRUSH_WGSL, SHAPE_WGSL, BLIT_WGSL, DOT_GRID_WGSL, OVERLAY_WGSL } from "./shaders";
+import { BRUSH_WGSL, SHAPE_WGSL, BLIT_WGSL, COMPOSITE_FRAME_WGSL, DOT_GRID_WGSL, OVERLAY_WGSL } from "./shaders";
 import type { RGB } from "../draw/types";
 import { unpremultiplyAlpha } from "../util/pixel";
 
@@ -49,16 +49,24 @@ export class Renderer {
   private eraseBrushPipeline!: GPURenderPipeline;
   private shapePipeline!: GPURenderPipeline;
   private blitPipeline!: GPURenderPipeline;
+  private compositeFramePipeline!: GPURenderPipeline;
+  private compositeFrameExportPipeline!: GPURenderPipeline;
   private dotGridPipeline!: GPURenderPipeline;
   private overlayPipeline!: GPURenderPipeline;
 
   // explicit layouts so the screen-pass bind groups can use dynamic offsets
   private brushBGL!: GPUBindGroupLayout;
   private blitBGL!: GPUBindGroupLayout;
+  private compositeFrameBGL!: GPUBindGroupLayout;
   private dotGridBGL!: GPUBindGroupLayout;
   private overlayBGL!: GPUBindGroupLayout;
 
   private sampler!: GPUSampler;
+  private blackTexView!: GPUTextureView;
+  private compositeGroupCache = new WeakMap<
+    FrameTexture,
+    { bg: GPUTextureView; buffer: GPUBuffer; group: GPUBindGroup }
+  >();
 
   // reusable buffers for drawing into frame textures
   private brushInstances!: GPUBuffer;
@@ -84,7 +92,11 @@ export class Renderer {
   private previewSurfaces = new WeakMap<HTMLCanvasElement, GPUCanvasContext>();
   private previewConfigured = new WeakMap<HTMLCanvasElement, boolean>();
   private previewUniform!: GPUBuffer;
-  private previewBindGroups = new WeakMap<FrameTexture, GPUBindGroup>();
+  private exportCompositeTexture: GPUTexture | null = null;
+  private exportCompositeView: GPUTextureView | null = null;
+  private exportCompositeW = 0;
+  private exportCompositeH = 0;
+  private exportCompositeUniform!: GPUBuffer;
 
   // Brush instances queued during the frame; flushed once per rAF (see flushBrush).
   private brushPending = new Map<
@@ -97,7 +109,6 @@ export class Renderer {
   // Reusable scratch arrays to avoid per-call allocations in hot draw paths.
   private scratch4 = new Float32Array(4);
   private scratch8 = new Float32Array(8);
-  private readonly previewUniformData = new Float32Array([2, -2, -1, 1, 1, 1, 1, 1]);
 
   background: [number, number, number, number] = [0.12, 0.12, 0.14, 1];
 
@@ -126,6 +137,18 @@ export class Renderer {
       magFilter: "linear",
       minFilter: "linear",
     });
+    const blackTex = this.device.createTexture({
+      size: { width: 1, height: 1 },
+      format: FRAME_FORMAT,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    this.device.queue.writeTexture(
+      { texture: blackTex },
+      new Uint8Array([0, 0, 0, 255]),
+      { bytesPerRow: 4 },
+      { width: 1, height: 1 },
+    );
+    this.blackTexView = blackTex.createView();
 
     this.buildPipelines();
     this.buildBuffers();
@@ -226,6 +249,42 @@ export class Renderer {
         module: blitModule,
         entryPoint: "fs",
         targets: [{ format: this.format, blend: PREMULT_BLEND }],
+      },
+      primitive: { topology: "triangle-list" },
+    });
+
+    const compositeModule = d.createShaderModule({ code: COMPOSITE_FRAME_WGSL });
+    this.compositeFrameBGL = d.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+          buffer: { type: "uniform", hasDynamicOffset: true, minBindingSize: 64 },
+        },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+      ],
+    });
+    const compositePL = d.createPipelineLayout({ bindGroupLayouts: [this.compositeFrameBGL] });
+    const compositeVertex = { module: compositeModule, entryPoint: "vs" };
+    this.compositeFramePipeline = d.createRenderPipeline({
+      layout: compositePL,
+      vertex: compositeVertex,
+      fragment: {
+        module: compositeModule,
+        entryPoint: "fs",
+        targets: [{ format: this.format, blend: PREMULT_BLEND }],
+      },
+      primitive: { topology: "triangle-list" },
+    });
+    this.compositeFrameExportPipeline = d.createRenderPipeline({
+      layout: compositePL,
+      vertex: compositeVertex,
+      fragment: {
+        module: compositeModule,
+        entryPoint: "fs",
+        targets: [{ format: FRAME_FORMAT, blend: PREMULT_BLEND }],
       },
       primitive: { topology: "triangle-list" },
     });
@@ -341,7 +400,11 @@ export class Renderer {
     });
 
     this.previewUniform = d.createBuffer({
-      size: 32,
+      size: 64,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.exportCompositeUniform = d.createBuffer({
+      size: 64,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
   }
@@ -679,6 +742,34 @@ export class Renderer {
     this.pass.draw(6);
   }
 
+  // Flatten drawing + optional background into opaque RGB for display.
+  compositeFrameLayer(
+    frame: FrameTexture,
+    destRect: ScreenRect,
+    bgTextureView: GPUTextureView | null,
+    fit: { x: number; y: number; w: number; h: number } | null,
+    tint = 1,
+  ): void {
+    if (!this.pass) return;
+    const off = this.allocUniform(64);
+    this.writeCompositeUniform(
+      off,
+      this.canvas.width,
+      this.canvas.height,
+      destRect,
+      frame.width,
+      frame.height,
+      fit,
+      bgTextureView !== null,
+      tint,
+    );
+    const bgView = bgTextureView ?? this.blackTexView;
+    const group = this.compositeBindGroupFor(frame, bgView, this.uniformRing);
+    this.pass.setPipeline(this.compositeFramePipeline);
+    this.pass.setBindGroup(0, group, [off]);
+    this.pass.draw(6);
+  }
+
   // Draw colored triangles directly on the screen (clip-space verts).
   overlay(clipVerts: Float32Array, color: [number, number, number, number]): void {
     if (!this.pass) return;
@@ -708,22 +799,6 @@ export class Renderer {
     if (this.encoder) this.device.queue.submit([this.encoder.finish()]);
     this.pass = null;
     this.encoder = null;
-  }
-
-  private previewBindGroupFor(frame: FrameTexture): GPUBindGroup {
-    let group = this.previewBindGroups.get(frame);
-    if (!group) {
-      group = this.device.createBindGroup({
-        layout: this.blitBGL,
-        entries: [
-          { binding: 0, resource: { buffer: this.previewUniform, offset: 0, size: 32 } },
-          { binding: 1, resource: this.sampler },
-          { binding: 2, resource: frame.view },
-        ],
-      });
-      this.previewBindGroups.set(frame, group);
-    }
-    return group;
   }
 
   // Blit a frame texture to a secondary canvas (e.g. the loop preview panel).
@@ -758,8 +833,7 @@ export class Renderer {
       this.previewConfigured.set(target, true);
     }
 
-    const previewBindGroup = this.previewBindGroupFor(frame);
-    const bgGroup = background?.getPreviewBlitBindGroup() ?? null;
+    const bgView = background?.getTextureView() ?? null;
     const fit = background?.fitRect(frame.width, frame.height) ?? null;
 
     const encoder = this.device.createCommandEncoder();
@@ -774,39 +848,39 @@ export class Renderer {
         },
       ],
     });
-    pass.setPipeline(this.blitPipeline);
-
-    if (bgGroup && fit) {
-      const bgRect: ScreenRect = {
-        x: (fit.x / frame.width) * w,
-        y: (fit.y / frame.height) * h,
-        w: (fit.w / frame.width) * w,
-        h: (fit.h / frame.height) * h,
-      };
-      this.blitRectToPass(pass, bgGroup, w, h, bgRect, 1, this.previewUniform);
-    }
-
-    this.device.queue.writeBuffer(this.previewUniform, 0, this.previewUniformData);
-    pass.setBindGroup(0, previewBindGroup, [0]);
-    pass.draw(6);
+    this.compositeLayersToPass(
+      pass,
+      this.compositeFramePipeline,
+      w,
+      h,
+      frame,
+      bgView,
+      fit,
+      this.previewUniform,
+    );
     pass.end();
     this.device.queue.submit([encoder.finish()]);
   }
 
-  private blitRectToPass(
+  // Composite background + drawing layer into flattened opaque RGB.
+  private compositeLayersToPass(
     pass: GPURenderPassEncoder,
-    bindGroup: GPUBindGroup,
-    canvasW: number,
-    canvasH: number,
-    rect: ScreenRect,
-    tint: number,
+    pipeline: GPURenderPipeline,
+    targetW: number,
+    targetH: number,
+    frame: FrameTexture,
+    bgTextureView: GPUTextureView | null,
+    fit: { x: number; y: number; w: number; h: number } | null,
     uniformBuffer: GPUBuffer,
+    tint = 1,
   ): void {
-    const sx = (rect.w / canvasW) * 2;
-    const sy = -(rect.h / canvasH) * 2;
-    const ox = (rect.x / canvasW) * 2 - 1;
-    const oy = 1 - (rect.y / canvasH) * 2;
-    const u = this.scratch8;
+    pass.setPipeline(pipeline);
+    const rect = { x: 0, y: 0, w: targetW, h: targetH };
+    const u = new Float32Array(16);
+    const sx = (rect.w / targetW) * 2;
+    const sy = -(rect.h / targetH) * 2;
+    const ox = (rect.x / targetW) * 2 - 1;
+    const oy = 1 - (rect.y / targetH) * 2;
     u[0] = sx;
     u[1] = sy;
     u[2] = ox;
@@ -815,9 +889,170 @@ export class Renderer {
     u[5] = tint;
     u[6] = tint;
     u[7] = tint;
+    if (fit && bgTextureView) {
+      u[8] = fit.x / frame.width;
+      u[9] = fit.y / frame.height;
+      u[10] = fit.w / frame.width;
+      u[11] = fit.h / frame.height;
+      u[12] = 1;
+    } else {
+      u[8] = u[9] = u[10] = u[11] = 0;
+      u[12] = 0;
+    }
     this.device.queue.writeBuffer(uniformBuffer, 0, u);
-    pass.setBindGroup(0, bindGroup, [0]);
+    const bgView = bgTextureView ?? this.blackTexView;
+    const group = this.compositeBindGroupFor(frame, bgView, uniformBuffer);
+    pass.setBindGroup(0, group, [0]);
     pass.draw(6);
+  }
+
+  private writeCompositeUniform(
+    offset: number,
+    canvasW: number,
+    canvasH: number,
+    destRect: ScreenRect,
+    frameW: number,
+    frameH: number,
+    fit: { x: number; y: number; w: number; h: number } | null,
+    hasBg: boolean,
+    tint: number,
+  ): void {
+    const u = new Float32Array(16);
+    const sx = (destRect.w / canvasW) * 2;
+    const sy = -(destRect.h / canvasH) * 2;
+    const ox = (destRect.x / canvasW) * 2 - 1;
+    const oy = 1 - (destRect.y / canvasH) * 2;
+    u[0] = sx;
+    u[1] = sy;
+    u[2] = ox;
+    u[3] = oy;
+    u[4] = tint;
+    u[5] = tint;
+    u[6] = tint;
+    u[7] = tint;
+    if (fit && hasBg) {
+      u[8] = fit.x / frameW;
+      u[9] = fit.y / frameH;
+      u[10] = fit.w / frameW;
+      u[11] = fit.h / frameH;
+      u[12] = 1;
+    } else {
+      u[8] = u[9] = u[10] = u[11] = 0;
+      u[12] = 0;
+    }
+    this.device.queue.writeBuffer(this.uniformRing, offset, u);
+  }
+
+  private compositeBindGroupFor(
+    frame: FrameTexture,
+    bgView: GPUTextureView,
+    uniformBuffer: GPUBuffer,
+  ): GPUBindGroup {
+    const cached = this.compositeGroupCache.get(frame);
+    if (cached && cached.bg === bgView && cached.buffer === uniformBuffer) return cached.group;
+    const group = this.device.createBindGroup({
+      layout: this.compositeFrameBGL,
+      entries: [
+        { binding: 0, resource: { buffer: uniformBuffer, offset: 0, size: 64 } },
+        { binding: 1, resource: this.sampler },
+        { binding: 2, resource: frame.view },
+        { binding: 3, resource: bgView },
+      ],
+    });
+    this.compositeGroupCache.set(frame, { bg: bgView, buffer: uniformBuffer, group });
+    return group;
+  }
+
+  private ensureExportCompositeTexture(width: number, height: number): GPUTextureView {
+    if (
+      !this.exportCompositeTexture ||
+      this.exportCompositeW !== width ||
+      this.exportCompositeH !== height
+    ) {
+      this.exportCompositeTexture?.destroy();
+      this.exportCompositeTexture = this.device.createTexture({
+        size: { width, height },
+        format: FRAME_FORMAT,
+        usage:
+          GPUTextureUsage.RENDER_ATTACHMENT |
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.COPY_SRC,
+      });
+      this.exportCompositeView = this.exportCompositeTexture.createView();
+      this.exportCompositeW = width;
+      this.exportCompositeH = height;
+    }
+    return this.exportCompositeView!;
+  }
+
+  // GPU-composite background + strokes, then read back (matches live canvas blending).
+  async readCompositeToBlob(
+    frame: FrameTexture,
+    background: import("../draw/BackgroundImage").BackgroundImage,
+    type = "image/png",
+    quality?: number,
+  ): Promise<Blob> {
+    this.flushBrush();
+    const { width, height } = frame;
+    const view = this.ensureExportCompositeTexture(width, height);
+    const bgView = background.getTextureView();
+    const fit = background.fitRect(width, height);
+
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view,
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: "clear",
+          storeOp: "store",
+        },
+      ],
+    });
+    this.compositeLayersToPass(
+      pass,
+      this.compositeFrameExportPipeline,
+      width,
+      height,
+      frame,
+      bgView,
+      fit,
+      this.exportCompositeUniform,
+    );
+    pass.end();
+
+    const bytesPerRow = Math.ceil((width * 4) / 256) * 256;
+    const readBuffer = this.device.createBuffer({
+      size: bytesPerRow * height,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    encoder.copyTextureToBuffer(
+      { texture: this.exportCompositeTexture! },
+      { buffer: readBuffer, bytesPerRow, rowsPerImage: height },
+      { width, height },
+    );
+    this.device.queue.submit([encoder.finish()]);
+
+    await readBuffer.mapAsync(GPUMapMode.READ);
+    const mapped = new Uint8Array(readBuffer.getMappedRange());
+    const pixels = new Uint8ClampedArray(width * height * 4);
+    const rowBytes = width * 4;
+    for (let y = 0; y < height; y++) {
+      pixels.set(mapped.subarray(y * bytesPerRow, y * bytesPerRow + rowBytes), y * rowBytes);
+    }
+    readBuffer.unmap();
+    readBuffer.destroy();
+
+    const out = document.createElement("canvas");
+    out.width = width;
+    out.height = height;
+    const ctx = out.getContext("2d");
+    if (!ctx) throw new Error("2d context unavailable for frame export");
+    ctx.putImageData(new ImageData(pixels, width, height), 0, 0);
+
+    return await new Promise<Blob>((resolve, reject) => {
+      out.toBlob((b) => (b ? resolve(b) : reject(new Error("frame export failed"))), type, quality);
+    });
   }
 
   // Read a frame texture back into a PNG blob (frames are rgba8unorm, premultiplied).

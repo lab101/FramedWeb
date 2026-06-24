@@ -34,6 +34,10 @@ export class BackgroundImage {
     return this.previewBlitBindGroup;
   }
 
+  getTextureView(): GPUTextureView | null {
+    return this.texture?.createView() ?? null;
+  }
+
   getBlitBindGroup(): GPUBindGroup | null {
     return this.blitBindGroup;
   }
@@ -76,51 +80,19 @@ export class BackgroundImage {
     this.onChange.emit();
   }
 
-  // Blit black paper, optional background image, then the drawing layer.
+  // Blit flattened drawing + optional background to the screen.
   blitFrame(frame: FrameTexture, destRect: ScreenRect, tint = 1): void {
-    this.renderer.fillRect(destRect, [0, 0, 0, tint]);
-    const fit = this.fitRect(frame.width, frame.height);
-    const scale = destRect.w / frame.width;
-    if (fit && this.blitBindGroup) {
-      this.renderer.blitImage(
-        this.blitBindGroup,
-        {
-          x: destRect.x + fit.x * scale,
-          y: destRect.y + fit.y * scale,
-          w: fit.w * scale,
-          h: fit.h * scale,
-        },
-        tint,
-      );
-    }
-    this.renderer.blit(frame, destRect, tint);
+    this.renderer.compositeFrameLayer(
+      frame,
+      destRect,
+      this.getTextureView(),
+      this.fitRect(frame.width, frame.height),
+      tint,
+    );
   }
 
   async exportFrame(frame: FrameTexture, type = "image/png", quality?: number): Promise<Blob> {
-    this.renderer.flushBrush();
-    const { width, height } = frame;
-    const out = document.createElement("canvas");
-    out.width = width;
-    out.height = height;
-    const ctx = out.getContext("2d");
-    if (!ctx) throw new Error("2d context unavailable for frame export");
-
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, width, height);
-
-    if (this.bitmap) {
-      const fit = this.fitRect(width, height);
-      if (fit) ctx.drawImage(this.bitmap, fit.x, fit.y, fit.w, fit.h);
-    }
-
-    const frameBlob = await this.renderer.readFrameToBlob(frame, type, quality, true);
-    const frameImg = await createImageBitmap(frameBlob);
-    ctx.drawImage(frameImg, 0, 0);
-    frameImg.close();
-
-    return await new Promise<Blob>((resolve, reject) => {
-      out.toBlob((b) => (b ? resolve(b) : reject(new Error("frame export failed"))), type, quality);
-    });
+    return this.renderer.readCompositeToBlob(frame, this, type, quality);
   }
 
   clear(): void {
