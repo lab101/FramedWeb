@@ -113,7 +113,7 @@ export class BackgroundImage {
       if (fit) ctx.drawImage(this.bitmap, fit.x, fit.y, fit.w, fit.h);
     }
 
-    const frameBlob = await this.renderer.readFrameToBlob(frame, type, quality);
+    const frameBlob = await this.renderer.readFrameToBlob(frame, type, quality, true);
     const frameImg = await createImageBitmap(frameBlob);
     ctx.drawImage(frameImg, 0, 0);
     frameImg.close();

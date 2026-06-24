@@ -1,5 +1,6 @@
 import { BRUSH_WGSL, SHAPE_WGSL, BLIT_WGSL, DOT_GRID_WGSL, OVERLAY_WGSL } from "./shaders";
 import type { RGB } from "../draw/types";
+import { unpremultiplyAlpha } from "../util/pixel";
 
 // A drawable frame "paper" — equivalent to a Cinder FBO.
 export interface FrameTexture {
@@ -819,8 +820,13 @@ export class Renderer {
     pass.draw(6);
   }
 
-  // Read a frame texture back into a PNG blob (frames are opaque rgba8unorm).
-  async readFrameToBlob(frame: FrameTexture, type = "image/png", quality?: number): Promise<Blob> {
+  // Read a frame texture back into a PNG blob (frames are rgba8unorm, premultiplied).
+  async readFrameToBlob(
+    frame: FrameTexture,
+    type = "image/png",
+    quality?: number,
+    straightAlpha = false,
+  ): Promise<Blob> {
     this.flushBrush();
     const { width, height } = frame;
     const bytesPerRow = Math.ceil((width * 4) / 256) * 256;
@@ -847,6 +853,8 @@ export class Renderer {
     }
     readBuffer.unmap();
     readBuffer.destroy();
+
+    if (straightAlpha) unpremultiplyAlpha(pixels);
 
     const out = document.createElement("canvas");
     out.width = width;
