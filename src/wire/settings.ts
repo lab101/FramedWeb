@@ -1,10 +1,12 @@
 import type { App } from "../main";
+import { closeHelp } from "./help";
 
 export function isSettingsOpen(): boolean {
   return !document.getElementById("settings-overlay")!.classList.contains("hidden");
 }
 
 export function openSettings(): void {
+  closeHelp();
   const overlay = document.getElementById("settings-overlay") as HTMLElement;
   const btn = document.getElementById("settings-btn") as HTMLButtonElement;
   overlay.classList.remove("hidden");
@@ -27,7 +29,7 @@ function toggleSettings(): void {
 
 export function wireSettings(_app: App): void {
   const btn = document.getElementById("settings-btn") as HTMLButtonElement;
-  const backdrop = document.querySelector(".settings-backdrop") as HTMLElement;
+  const backdrop = document.querySelector("#settings-overlay .settings-backdrop") as HTMLElement;
   btn.addEventListener("click", toggleSettings);
   backdrop.addEventListener("click", closeSettings);
 }

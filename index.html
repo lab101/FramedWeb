@@ -76,20 +76,110 @@
         </div>
       </aside>
 
-      <button
-        id="settings-btn"
-        class="icon-btn settings-btn"
-        type="button"
-        title="Settings"
-        aria-label="Settings"
-        aria-expanded="false"
-        aria-controls="settings-overlay"
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 5 15.4a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 8a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      </button>
+      <div class="bottom-actions">
+        <button
+          id="help-btn"
+          class="icon-btn help-btn"
+          type="button"
+          title="Keyboard shortcuts"
+          aria-label="Keyboard shortcuts"
+          aria-expanded="false"
+          aria-controls="help-overlay"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </button>
+        <button
+          id="settings-btn"
+          class="icon-btn settings-btn"
+          type="button"
+          title="Settings"
+          aria-label="Settings"
+          aria-expanded="false"
+          aria-controls="settings-overlay"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 5 15.4a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 8a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+      </div>
+
+      <div id="help-overlay" class="settings-overlay hidden" aria-hidden="true">
+        <div class="settings-backdrop"></div>
+        <div class="settings-panel shortcuts-panel">
+          <section class="panel">
+            <div class="panel-title">Tools</div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Brush</span>
+              <span class="shortcut-keys"><kbd class="key">B</kbd></span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Rectangle</span>
+              <span class="shortcut-keys"><kbd class="key">R</kbd></span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Circle</span>
+              <span class="shortcut-keys"><kbd class="key">C</kbd></span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Clear all</span>
+              <span class="shortcut-keys"><kbd class="key">X</kbd></span>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">Frames</div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Previous frame</span>
+              <span class="shortcut-keys"><kbd class="key">←</kbd></span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Next frame</span>
+              <span class="shortcut-keys"><kbd class="key">→</kbd></span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Faster</span>
+              <span class="shortcut-keys"><kbd class="key">[</kbd></span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Slower</span>
+              <span class="shortcut-keys"><kbd class="key">]</kbd></span>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">Canvas</div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Zoom in</span>
+              <span class="shortcut-keys"><kbd class="key">V</kbd></span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Zoom out</span>
+              <span class="shortcut-keys"><kbd class="key">N</kbd></span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Pan</span>
+              <span class="shortcut-keys"><kbd class="key">Space</kbd><span class="key-sep">+</span><span class="shortcut-hint">drag</span></span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Fullscreen</span>
+              <span class="shortcut-keys"><kbd class="key">F</kbd></span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Projector mode</span>
+              <span class="shortcut-keys"><kbd class="key">P</kbd></span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-label">Close / exit</span>
+              <span class="shortcut-keys"><kbd class="key">Esc</kbd></span>
+            </div>
+          </section>
+        </div>
+      </div>
 
       <div id="settings-overlay" class="settings-overlay hidden" aria-hidden="true">
         <div class="settings-backdrop"></div>

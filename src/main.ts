@@ -16,6 +16,7 @@ import { wirePointer } from "./wire/pointer";
 import { wireKeyboard } from "./wire/keyboard";
 import { wireControls } from "./wire/controls";
 import { wireSettings, closeSettings } from "./wire/settings";
+import { wireHelp, closeHelp } from "./wire/help";
 import { wireSidebarToggle } from "./wire/sidebar";
 import { wireNetwork } from "./wire/network";
 import { wireBackgroundImage } from "./wire/backgroundImage";
@@ -77,6 +78,7 @@ export class App {
     wireKeyboard(this);
     wireControls(this);
     wireSettings(this);
+    wireHelp(this);
     wireSidebarToggle(this);
     wireNetwork(this);
     wireBackgroundImage(this);
@@ -111,7 +113,10 @@ export class App {
   setProjector(on: boolean): void {
     this.projector = on;
     document.body.classList.toggle("projector", on);
-    if (on) closeSettings();
+    if (on) {
+      closeSettings();
+      closeHelp();
+    }
     syncFrameStripVisibility(this);
     this.resize();
   }

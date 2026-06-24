@@ -3,6 +3,7 @@ import { KEYBOARD_ZOOM_STEP } from "../config";
 import type { App } from "../main";
 import { scrollFrameStripToIndex } from "../frameStrip";
 import { isSettingsOpen, closeSettings } from "./settings";
+import { isHelpOpen, closeHelp } from "./help";
 import { setSpeed, toggleFullscreen, setTool } from "./controls";
 
 export function wireKeyboard(app: App): void {
@@ -57,7 +58,9 @@ export function wireKeyboard(app: App): void {
         app.setProjector(!app.projector);
         break;
       case "Escape":
-        if (isSettingsOpen()) {
+        if (isHelpOpen()) {
+          closeHelp();
+        } else if (isSettingsOpen()) {
           closeSettings();
         } else if (app.projector) {
           app.setProjector(false);
